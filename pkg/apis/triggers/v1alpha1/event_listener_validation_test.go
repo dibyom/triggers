@@ -236,6 +236,23 @@ func TestEventListenerValidate_error(t *testing.T) {
 				}},
 			},
 		},
+	}, {
+		name: "CEL interceptor with no filter",
+		el: &v1alpha1.EventListener{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "name",
+				Namespace: "namespace",
+			},
+			Spec: v1alpha1.EventListenerSpec{
+				Triggers: []v1alpha1.EventListenerTrigger{{
+					Bindings: []*v1alpha1.EventListenerBinding{{Name: "tb"}},
+					Template: v1alpha1.EventListenerTemplate{Name: "tt"},
+					Interceptor: &v1alpha1.EventInterceptor{
+						CEL: &v1alpha1.CELInterceptor{},
+					},
+				}},
+			},
+		},
 	}}
 
 	for _, test := range tests {
