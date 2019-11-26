@@ -105,6 +105,11 @@ type GitlabInterceptor struct {
 	EventTypes []string   `json:"eventTypes,omitempty"`
 }
 
+// CELInterceptor provides a webhook to intercept and pre-process events
+type CELInterceptor struct {
+	Expression string `json:"expression,omitempty"`
+}
+
 // SecretRef contains the information required to reference a single secret string
 // This is needed because the other secretRef types are not cross-namespace and do not
 // actually contain the "SecretName" field, which allows us to access a single secret value.
