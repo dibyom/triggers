@@ -24,11 +24,10 @@ import (
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
 	"github.com/tektoncd/triggers/pkg/interceptors"
-
-	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
+
+	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 )
 
 // Interceptor implements a CEL based interceptor, that uses CEL expressions
@@ -55,7 +54,7 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	env, err := cel.NewEnv(
 		cel.Declarations(
 			decls.NewIdent("body", mapStrDyn, nil),
-		))
+			decls.NewIdent("headers", mapStrDyn, nil)))
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +80,7 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 		return nil, err
 	}
 
-	out, _, err := prg.Eval(map[string]interface{}{"body": jsonMap})
+	out, _, err := prg.Eval(map[string]interface{}{"body": jsonMap, "headers": request.Header})
 	if out == types.True {
 		return payload, err
 	}
