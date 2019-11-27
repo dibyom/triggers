@@ -21,6 +21,7 @@ import (
 // Body and header check
 // Unable to parse the expression
 // Unable to parse the JSON body
+// Allow configuration via a config map
 
 func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 	type args struct {
