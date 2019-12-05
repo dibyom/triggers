@@ -22,6 +22,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/tektoncd/triggers/pkg/interceptors/cel"
 	"github.com/tektoncd/triggers/pkg/interceptors/github"
 	"github.com/tektoncd/triggers/pkg/interceptors/gitlab"
 	"github.com/tektoncd/triggers/pkg/resources"
@@ -92,6 +93,8 @@ func (r Sink) HandleEvent(response http.ResponseWriter, request *http.Request) {
 				interceptor = github.NewInterceptor(t.Interceptor.Github, r.KubeClientSet, r.EventListenerNamespace, log)
 			case t.Interceptor.Gitlab != nil:
 				interceptor = gitlab.NewInterceptor(t.Interceptor.Gitlab, r.KubeClientSet, r.EventListenerNamespace, log)
+			case t.Interceptor.CEL != nil:
+				interceptor = cel.NewInterceptor(t.Interceptor.CEL, r.KubeClientSet, r.EventListenerNamespace, log)
 			}
 		}
 		go func(t triggersv1.EventListenerTrigger) {

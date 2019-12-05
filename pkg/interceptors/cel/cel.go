@@ -45,6 +45,7 @@ type Interceptor struct {
 	EventListenerNamespace string
 }
 
+// NewInterceptor creates a prepopulated Interceptor.
 func NewInterceptor(cel *triggersv1.CELInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) interceptors.Interceptor {
 	return &Interceptor{
 		Logger:                 l,
@@ -54,28 +55,19 @@ func NewInterceptor(cel *triggersv1.CELInterceptor, k kubernetes.Interface, ns s
 	}
 }
 
+// ExecuteTrigger is an implementation of the Interceptor interface.
 func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *triggersv1.EventListenerTrigger, _ string) ([]byte, error) {
-	mapStrDyn := decls.NewMapType(decls.String, decls.Dyn)
-	env, err := cel.NewEnv(
-		cel.Declarations(
-			decls.NewIdent("body", mapStrDyn, nil),
-			decls.NewIdent("headers", mapStrDyn, nil),
-			decls.NewFunction("match",
-				decls.NewInstanceOverload("match_map_string_string",
-					[]*exprpb.Type{mapStrDyn, decls.String, decls.String}, decls.Bool))))
+	env, err := makeCelEnv()
 	if err != nil {
 		return nil, err
 	}
 
-	var jsonMap map[string]interface{}
-	err = json.Unmarshal(payload, &jsonMap)
+	evalContext, err := makeEvalContext(payload, request)
 	if err != nil {
 		return nil, err
 	}
 
-	evalEnv := map[string]interface{}{"body": jsonMap, "headers": request.Header}
-
-	out, err := evaluate(w.CEL.Expression, env, evalEnv)
+	out, err := evaluate(w.CEL.Expression, env, evalContext)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +77,7 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	}
 
 	for key, expr := range w.CEL.Values {
-		val, err := evaluate(expr, env, evalEnv)
+		val, err := evaluate(expr, env, evalContext)
 		if err != nil {
 			return nil, err
 		}
@@ -97,6 +89,61 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	}
 
 	return payload, nil
+}
+
+func evaluate(expr string, env cel.Env, data map[string]interface{}) (ref.Val, error) {
+	parsed, issues := env.Parse(expr)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+
+	prg, err := env.Program(checked, embeddedFunctions())
+	if err != nil {
+		return nil, err
+	}
+
+	out, _, err := prg.Eval(data)
+	return out, err
+}
+
+func embeddedFunctions() cel.ProgramOption {
+	return cel.Functions(
+		&functions.Overload{
+			Operator: "match",
+			Function: matchHeader},
+		&functions.Overload{
+			Operator: "truncate",
+			Binary:   truncateString},
+	)
+
+}
+func makeCelEnv() (cel.Env, error) {
+	mapStrDyn := decls.NewMapType(decls.String, decls.Dyn)
+	return cel.NewEnv(
+		cel.Declarations(
+			decls.NewIdent("body", mapStrDyn, nil),
+			decls.NewIdent("headers", mapStrDyn, nil),
+			decls.NewFunction("truncate",
+				decls.NewOverload("truncate_string_uint",
+					[]*exprpb.Type{decls.Dyn, decls.Int}, decls.String)),
+			decls.NewFunction("match",
+				decls.NewInstanceOverload("match_map_string_string",
+					[]*exprpb.Type{mapStrDyn, decls.String, decls.String}, decls.Bool))))
+}
+
+func makeEvalContext(body []byte, r *http.Request) (map[string]interface{}, error) {
+	var jsonMap map[string]interface{}
+	err := json.Unmarshal(body, &jsonMap)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]interface{}{"body": jsonMap, "headers": r.Header}, nil
+
 }
 
 func matchHeader(vals ...ref.Val) ref.Val {
@@ -119,30 +166,16 @@ func matchHeader(vals ...ref.Val) ref.Val {
 
 }
 
-func evaluate(expr string, env cel.Env, data map[string]interface{}) (ref.Val, error) {
-	parsed, issues := env.Parse(expr)
-	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
+func truncateString(lhs, rhs ref.Val) ref.Val {
+	str, ok := lhs.(types.String)
+	if !ok {
+		return types.ValOrErr(str, "unexpected type '%v' passed to truncate", lhs.Type())
 	}
 
-	checked, issues := env.Check(parsed)
-	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
+	n, ok := rhs.(types.Int)
+	if !ok {
+		return types.ValOrErr(n, "unexpected type '%v' passed to truncate", rhs.Type())
 	}
 
-	prg, err := env.Program(checked, embeddedFunctions())
-	if err != nil {
-		return nil, err
-	}
-
-	out, _, err := prg.Eval(data)
-	return out, nil
-}
-
-func embeddedFunctions() cel.ProgramOption {
-	return cel.Functions(
-		&functions.Overload{
-			Operator: "match",
-			Function: matchHeader})
-
+	return types.String(str[:n])
 }

@@ -79,6 +79,7 @@ type EventInterceptor struct {
 	Webhook *WebhookInterceptor `json:"webhook,omitempty"`
 	Github  *GithubInterceptor  `json:"github,omitempty"`
 	Gitlab  *GitlabInterceptor  `json:"gitlab,omitempty"`
+	CEL     *CELInterceptor     `json:"cel,omitempty"`
 }
 
 // WebhookInterceptor provides a webhook to intercept and pre-process events

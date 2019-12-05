@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/common/types/ref"
 	"github.com/tektoncd/pipeline/pkg/logging"
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	fakekubeclient "knative.dev/pkg/injection/clients/kubeclient/fake"
@@ -15,7 +17,7 @@ import (
 
 // Allow configuration via a config map
 
-func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
+func TestInterceptor_ExecuteTrigger(t *testing.T) {
 	type args struct {
 		payload []byte
 	}
@@ -135,6 +137,34 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 			want:    []byte(`{"test":{"value":"testing"},"value":"testing"}`),
 			wantErr: false,
 		},
+		{
+			name: "failing check does not populate values",
+			CEL: &triggersv1.CELInterceptor{
+				Expression: "body.value == 'unknown'",
+				Values: map[string]string{
+					"test.value": "body.value",
+				},
+			},
+			args: args{
+				payload: []byte(`{"value":"testing"}`),
+			},
+			wantErr: false,
+		},
+		{
+			name: "passing check populates multiple values",
+			CEL: &triggersv1.CELInterceptor{
+				Expression: "body.value == 'testing'",
+				Values: map[string]string{
+					"test.value": "body.value",
+					"test.short": "truncate(body.value, 2)",
+				},
+			},
+			args: args{
+				payload: []byte(`{"value":"testing"}`),
+			},
+			want:    []byte(`{"test":{"short":"te","value":"testing"},"value":"testing"}`),
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -160,6 +190,58 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Interceptor.ExecuteTrigger() = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExpressionEvaluation(t *testing.T) {
+	jsonMap := map[string]interface{}{
+		"value": "testing",
+		"sha":   "ec26c3e57ca3a959ca5aad62de7213c562f8c821",
+	}
+	header := http.Header{}
+	evalEnv := map[string]interface{}{"body": jsonMap, "headers": header}
+	env, err := makeCelEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name string
+		expr string
+		want ref.Val
+	}{
+		{
+			name: "simple body value",
+			expr: "body.value",
+			want: types.String("testing"),
+		},
+		{
+			name: "truncate a long string",
+			expr: "truncate(body.sha, 7)",
+			want: types.String("ec26c3e"),
+		},
+		{
+			name: "boolean body value",
+			expr: "body.value == 'testing'",
+			want: types.Bool(true),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := evaluate(tt.expr, env, evalEnv)
+			if err != nil {
+				t.Errorf("evaluate() got an error %s", err)
+				return
+			}
+			_, ok := got.(*types.Err)
+			if ok {
+				t.Errorf("error evaluating expression: %s", got)
+				return
+			}
+
+			if !got.Equal(tt.want).(types.Bool) {
+				t.Errorf("evaluate() = %s, want %s", got, tt.want)
 			}
 		})
 	}
