@@ -13,14 +13,6 @@ import (
 	rtesting "knative.dev/pkg/reconciler/testing"
 )
 
-// Simple body check with matching body
-// Simple body check with non-matching body
-// Simple header check with matching header
-// Simple header check with non-matching header
-// Simple header check with case insensitive matching
-// Body and header check
-// Unable to parse the expression
-// Unable to parse the JSON body
 // Allow configuration via a config map
 
 func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
@@ -55,7 +47,6 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		// TODO: look at implementing an overload for this.
 		{
 			name: "simple header check with matching header",
 			CEL: &triggersv1.CELInterceptor{
@@ -78,15 +69,27 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "simple header check with case insensitive matching",
+			name: "simple header check with case insensitive failed match",
 			CEL: &triggersv1.CELInterceptor{
-				Expression: "headers['x-test'][0] == 'test-value'",
+				Expression: "headers.match('x-test', 'no-match')",
 			},
 			args: args{
 				payload: []byte(`{}`),
 			},
 			wantErr: false,
 		},
+		{
+			name: "simple header check with case insensitive matching",
+			CEL: &triggersv1.CELInterceptor{
+				Expression: "headers.match('x-test', 'test-value')",
+			},
+			args: args{
+				payload: []byte(`{}`),
+			},
+			want:    []byte(`{}`),
+			wantErr: false,
+		},
+
 		{
 			name: "body and header check",
 			CEL: &triggersv1.CELInterceptor{

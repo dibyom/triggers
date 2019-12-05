@@ -19,12 +19,16 @@ package cel
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/checker/decls"
 	"github.com/google/cel-go/common/types"
+	"github.com/google/cel-go/common/types/ref"
+	"github.com/google/cel-go/interpreter/functions"
 	"github.com/tektoncd/triggers/pkg/interceptors"
 	"go.uber.org/zap"
+	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
@@ -54,7 +58,10 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	env, err := cel.NewEnv(
 		cel.Declarations(
 			decls.NewIdent("body", mapStrDyn, nil),
-			decls.NewIdent("headers", mapStrDyn, nil)))
+			decls.NewIdent("headers", mapStrDyn, nil),
+			decls.NewFunction("match",
+				decls.NewInstanceOverload("match_map_string_string",
+					[]*exprpb.Type{mapStrDyn, decls.String, decls.String}, decls.Bool))))
 	if err != nil {
 		return nil, err
 	}
@@ -75,7 +82,7 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 		return nil, issues.Err()
 	}
 
-	prg, err := env.Program(checked)
+	prg, err := env.Program(checked, embeddedFunctions())
 	if err != nil {
 		return nil, err
 	}
@@ -86,4 +93,32 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	}
 
 	return nil, err
+}
+
+func matchHeader(vals ...ref.Val) ref.Val {
+	h, err := vals[0].ConvertToNative(reflect.TypeOf(http.Header{}))
+	if err != nil {
+		return types.NewErr("failed to convert to http.Header: %w", err)
+	}
+
+	key, ok := vals[1].(types.String)
+	if !ok {
+		return types.ValOrErr(key, "unexpected type '%v' passed to match", vals[1].Type())
+	}
+
+	val, ok := vals[2].(types.String)
+	if !ok {
+		return types.ValOrErr(val, "unexpected type '%v' passed to match", vals[2].Type())
+	}
+
+	return types.Bool(h.(http.Header).Get(string(key)) == string(val))
+
+}
+
+func embeddedFunctions() cel.ProgramOption {
+	return cel.Functions(
+		&functions.Overload{
+			Operator: "match",
+			Function: matchHeader})
+
 }
