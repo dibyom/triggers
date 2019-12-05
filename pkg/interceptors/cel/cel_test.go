@@ -121,6 +121,20 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "passing check populates a value",
+			CEL: &triggersv1.CELInterceptor{
+				Expression: "body.value == 'testing'",
+				Values: map[string]string{
+					"test.value": "body.value",
+				},
+			},
+			args: args{
+				payload: []byte(`{"value":"testing"}`),
+			},
+			want:    []byte(`{"test":{"value":"testing"},"value":"testing"}`),
+			wantErr: false,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -145,7 +159,7 @@ func TestInterceptor_ExecuteTrigger_Signature(t *testing.T) {
 				return
 			}
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Interceptor.ExecuteTrigger() = %v, want %v", got, tt.want)
+				t.Errorf("Interceptor.ExecuteTrigger() = %s, want %s", got, tt.want)
 			}
 		})
 	}

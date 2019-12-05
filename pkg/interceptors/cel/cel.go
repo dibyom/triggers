@@ -27,6 +27,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/interpreter/functions"
 	"github.com/tektoncd/triggers/pkg/interceptors"
+	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/client-go/kubernetes"
@@ -79,11 +80,23 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 		return nil, err
 	}
 
-	if out == types.True {
-		return payload, err
+	if out != types.True {
+		return nil, err
 	}
 
-	return nil, err
+	for key, expr := range w.CEL.Values {
+		val, err := evaluate(expr, env, evalEnv)
+		if err != nil {
+			return nil, err
+		}
+		payload, err = sjson.SetBytes(payload, key, val)
+		if err != nil {
+			return nil, err
+		}
+
+	}
+
+	return payload, nil
 }
 
 func matchHeader(vals ...ref.Val) ref.Val {
