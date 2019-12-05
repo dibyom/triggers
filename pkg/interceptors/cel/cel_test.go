@@ -81,6 +81,18 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name: "simple header check with case insensitive matching",
+			CEL: &triggersv1.CELInterceptor{
+				Expression: "headers.match('x-test', 'test-value')",
+			},
+			args: args{
+				payload: []byte(`{}`),
+			},
+			want:    []byte(`{}`),
+			wantErr: false,
+		},
+
+		{
 			name: "overloaded header check with case insensitive matching",
 			CEL: &triggersv1.CELInterceptor{
 				Expression: "headers.match('x-test', 'test-value')",
