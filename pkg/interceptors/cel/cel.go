@@ -72,22 +72,13 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 		return nil, err
 	}
 
-	parsed, issues := env.Parse(w.CEL.Expression)
-	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
-	}
+	evalEnv := map[string]interface{}{"body": jsonMap, "headers": request.Header}
 
-	checked, issues := env.Check(parsed)
-	if issues != nil && issues.Err() != nil {
-		return nil, issues.Err()
-	}
-
-	prg, err := env.Program(checked, embeddedFunctions())
+	out, err := evaluate(w.CEL.Expression, env, evalEnv)
 	if err != nil {
 		return nil, err
 	}
 
-	out, _, err := prg.Eval(map[string]interface{}{"body": jsonMap, "headers": request.Header})
 	if out == types.True {
 		return payload, err
 	}
@@ -113,6 +104,26 @@ func matchHeader(vals ...ref.Val) ref.Val {
 
 	return types.Bool(h.(http.Header).Get(string(key)) == string(val))
 
+}
+
+func evaluate(expr string, env cel.Env, data map[string]interface{}) (ref.Val, error) {
+	parsed, issues := env.Parse(expr)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+
+	checked, issues := env.Check(parsed)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+
+	prg, err := env.Program(checked, embeddedFunctions())
+	if err != nil {
+		return nil, err
+	}
+
+	out, _, err := prg.Eval(data)
+	return out, nil
 }
 
 func embeddedFunctions() cel.ProgramOption {
