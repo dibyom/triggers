@@ -36,4 +36,4 @@ e.g. in the example above, the body would end up with something like:
 }
 ```
 
-In addition to the rest of the GitHub hook body that was received.
+These values are embedded into the body, in addition to the rest of the GitHub hook body that was received.
