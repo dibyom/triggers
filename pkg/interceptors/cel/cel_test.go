@@ -11,7 +11,7 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/tektoncd/pipeline/pkg/logging"
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-	fakekubeclient "knative.dev/pkg/injection/clients/kubeclient/fake"
+	fakekubeclient "knative.dev/pkg/client/injection/kube/client/fake"
 	rtesting "knative.dev/pkg/reconciler/testing"
 )
 
