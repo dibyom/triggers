@@ -109,7 +109,6 @@ type GitlabInterceptor struct {
 // CELInterceptor provides a webhook to intercept and pre-process events
 type CELInterceptor struct {
 	Expression string            `json:"expression,omitempty"`
-	Values     map[string]string `json:"values,omitempty"`
 }
 
 // SecretRef contains the information required to reference a single secret string

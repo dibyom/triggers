@@ -24,16 +24,3 @@ spec:
         name: pipeline-template
 ```
 
-The `values` map, represents a set of key, value pairs, the value is an expression, which is evaluated, and then inserted into the returned payload at the key location.
-
-e.g. in the example above, the body would end up with something like:
-
-```json
-{
-  "pr": {
-    "url": "https://api.github.com/repos/Codertocat/Hello-World/pulls/2",
-    "short_sha": "ec26c3e"
-}
-```
-
-These values are embedded into the body, in addition to the rest of the GitHub hook body that was received - in practice, this could also update existing fields (it's using sjson under the hood).

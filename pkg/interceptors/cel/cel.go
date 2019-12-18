@@ -27,13 +27,35 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/interpreter/functions"
 	"github.com/tektoncd/triggers/pkg/interceptors"
-	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 	exprpb "google.golang.org/genproto/googleapis/api/expr/v1alpha1"
 	"k8s.io/client-go/kubernetes"
 
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 )
+
+// TODO:
+
+
+//- add validation/defaults
+//
+//- remove the Value field
+//
+//- header vs headers
+//
+//- fmt.Errorf for all CEL errors
+//
+//- header - should this be a string vs array
+//
+//- right now
+//-> Match False vs errors have no differentiation
+//-> Body missing vs err value
+//-> err should be true here
+//-> Wrap it in a diff error type??
+//
+//- executeInterceptor?
+//- parseCEL
+
 
 // Interceptor implements a CEL based interceptor, that uses CEL expressions
 // against the incoming body and headers to match, if the expression returns
@@ -75,19 +97,6 @@ func (w *Interceptor) ExecuteTrigger(payload []byte, request *http.Request, _ *t
 	if out != types.True {
 		return nil, err
 	}
-
-	for key, expr := range w.CEL.Values {
-		val, err := evaluate(expr, env, evalContext)
-		if err != nil {
-			return nil, err
-		}
-		payload, err = sjson.SetBytes(payload, key, val)
-		if err != nil {
-			return nil, err
-		}
-
-	}
-
 	return payload, nil
 }
 
@@ -138,12 +147,13 @@ func makeCelEnv() (cel.Env, error) {
 
 func makeEvalContext(body []byte, r *http.Request) (map[string]interface{}, error) {
 	var jsonMap map[string]interface{}
+	// TODO: Does this work if the body is an array???
 	err := json.Unmarshal(body, &jsonMap)
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Will this work if we have header instead of headers?
 	return map[string]interface{}{"body": jsonMap, "headers": r.Header}, nil
-
 }
 
 func matchHeader(vals ...ref.Val) ref.Val {
@@ -177,5 +187,5 @@ func truncateString(lhs, rhs ref.Val) ref.Val {
 		return types.ValOrErr(n, "unexpected type '%v' passed to truncate", rhs.Type())
 	}
 
-	return types.String(str[:n])
+	return str[:n]
 }
