@@ -200,9 +200,7 @@ spec:
 CEL interceptors parse expressions to filter requests based on JSON bodies and request headers, using the
 [CEL](https://github.com/google/cel-go) expression language.
 
-Supported features include case-insensitive matching on request headers, and the
-ability to add new keys (which can be extracted in a TemplateBinding) to the response
-body.
+Supported features include case-insensitive matching on request headers.
 
 <!-- FILE: examples/eventlisteners/cel-eventlistener-interceptor.yaml -->
 ```YAML
@@ -223,5 +221,5 @@ spec:
         name: pipeline-template
 ```
 
-The `expression` must return a `true` otherwise the request will be filtered
+The `expression` must return a `true` value, otherwise the request will be filtered
 out.
