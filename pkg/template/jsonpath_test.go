@@ -12,6 +12,28 @@ import (
 var objects = `{"a":"v\r\n烈","c":{"d":"e"},"empty": "","null": null, "number": 42}`
 var arrays = `[{"a": "b"}, {"c": "d"}, {"e": "f"}]`
 
+var telephone = `{
+  "firstName": "John",
+  "lastName" : "doe",
+  "age"      : 26,
+  "address"  : {
+    "streetAddress": "naist street",
+    "city"         : "Nara",
+    "postalCode"   : "630-0192"
+  },
+  "phoneNumbers": [
+    {
+      "type"  : "iPhone",
+      "number": "0123-4567-8888"
+    },
+    {
+      "type"  : "home",
+      "number": "0123-4567-8910"
+    }
+  ]
+}
+`
+
 // Checks that we print JSON strings when the JSONPath selects
 // an array or map value and regular values otherwise
 func TestParseJSONPath(t *testing.T) {
@@ -83,6 +105,16 @@ func TestParseJSONPath(t *testing.T) {
 		in:   `{"body":["", null, "thing"]}`,
 		expr: "$(body[:2])",
 		want: `["", null]`,
+	}, {
+		name: "wildcard",
+		in: telephone,
+		expr: "$(phoneNumbers[:1].*)",
+		want: `["0123-4567-8888","iPhone"]`,
+	}, {
+		name: "jsonpath-single value",
+		in: telephone,
+		expr: "$(firstName)",
+		want: "John",
 	}}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
