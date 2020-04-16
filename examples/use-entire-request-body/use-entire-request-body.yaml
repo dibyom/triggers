@@ -19,8 +19,7 @@ spec:
             image: ubuntu
             script: |
               #! /bin/bash
-              apt-get update && apt-get install -y -q --no-install-recommends jq
-              echo '$(inputs.params.body)' | jq '.'
+              echo '$(inputs.params.body)' > /tmp/paylod.json
       params:
       - name: body
         value: $(params.body)
@@ -39,6 +38,7 @@ kind: EventListener
 metadata:
   name: use-entire-request-body
 spec:
+  serviceAccountName: tekton-triggers-example-sa
   triggers:
     - name: use-entire-request-body
       bindings:

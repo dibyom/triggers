@@ -99,7 +99,7 @@ func Create(logger *zap.SugaredLogger, rt json.RawMessage, triggerName, eventID,
 	}
 
 	logger.Infof("For event ID %q creating resource %v", eventID, gvr)
-
+	logger.Infof("Body: %v", data)
 	if _, err := dc.Resource(gvr).Namespace(namespace).Create(data, metav1.CreateOptions{}); err != nil {
 		if kerrors.IsUnauthorized(err) || kerrors.IsForbidden(err) {
 			return err

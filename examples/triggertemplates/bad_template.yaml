@@ -1,0 +1,22 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: unused-triggertemplate
+spec:
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      name: sad-pr-$(uid)
+    spec:
+      pipelineSpec:
+        tasks:
+        - name: be-sad
+          taskSpec:
+            steps:
+            - name: not-happy
+              image: ubuntu
+              script: |
+                #/bin/bash
+                set -ex
+                echo "happy"

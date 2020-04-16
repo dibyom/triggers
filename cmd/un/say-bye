@@ -1,0 +1,47 @@
+{
+    "apiVersion": "tekton.dev/v1beta1",
+    "kind": "Task",
+    "metadata": {
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"tekton.dev/v1alpha1\",\"kind\":\"Task\",\"metadata\":{\"annotations\":{},\"name\":\"say-hello\",\"namespace\":\"default\"},\"spec\":{\"inputs\":{\"params\":[{\"description\":\"The Content-Type of the event\",\"name\":\"contenttype\",\"type\":\"string\"}],\"resources\":[{\"name\":\"git-source\",\"type\":\"git\"}]},\"steps\":[{\"args\":[\"echo -e 'Hello Triggers!\\\\nContent-Type is $(inputs.params.contenttype)'\"],\"command\":[\"bash\",\"-c\"],\"image\":\"bash\",\"name\":\"say-hi\"}]}}\n"
+        },
+        "creationTimestamp": "2020-03-20T17:58:16Z",
+        "generation": 2,
+        "name": "say-hello",
+        "namespace": "default",
+        "resourceVersion": "24904296",
+        "selfLink": "/apis/tekton.dev/v1beta1/namespaces/default/tasks/say-hello",
+        "uid": "7624af50-648e-46ad-8783-6ff3da53222c"
+    },
+    "spec": {
+        "params": [
+            {
+                "description": "The Content-Type of the event",
+                "name": "contenttype",
+                "type": "string"
+            }
+        ],
+        "resources": {
+            "inputs": [
+                {
+                    "name": "git-source",
+                    "type": "git"
+                }
+            ]
+        },
+        "steps": [
+            {
+                "args": [
+                    "echo -e 'Hello Triggers!\\nContent-Type is $(inputs.params.contenttype)'"
+                ],
+                "command": [
+                    "bash",
+                    "-c"
+                ],
+                "image": "bash",
+                "name": "say-hi",
+                "resources": {}
+            }
+        ]
+    }
+}
