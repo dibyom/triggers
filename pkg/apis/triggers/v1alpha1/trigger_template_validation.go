@@ -50,7 +50,7 @@ func (s *TriggerTemplateSpec) validate(ctx context.Context) *apis.FieldError {
 	if err := validateResourceTemplates(s.ResourceTemplates).ViaField("resourcetemplates"); err != nil {
 		return err
 	}
-	if err := verifyParamDeclarations(s.Params, s.ResourceTemplates).ViaField("resourcetemplates"); err != nil {
+	if err := verifyParamDeclarations(s.Params, s.ResourceTemplates).ViaField("params"); err != nil {
 		return err
 	}
 	return nil
@@ -86,25 +86,24 @@ func validateResourceTemplates(templates []TriggerResourceTemplate) *apis.FieldE
 
 // Verify every param in the ResourceTemplates is declared with a ParamSpec
 func verifyParamDeclarations(params []ParamSpec, templates []TriggerResourceTemplate) *apis.FieldError {
-	declaredParamNames := map[string]struct{}{}
-	for _, param := range params {
-		declaredParamNames[param.Name] = struct{}{}
-	}
-	for i, template := range templates {
+	paramUsages := map[string]struct{}{}
+	for _, template := range templates {
 		// Get all params in the template $(params.NAME)
 		templateParams := paramsRegexp.FindAllSubmatch(template.RawExtension.Raw, -1)
 		for _, templateParam := range templateParams {
 			templateParamName := string(templateParam[1])
-			if _, ok := declaredParamNames[templateParamName]; !ok {
-				fieldErr := apis.ErrInvalidValue(
-					fmt.Sprintf("undeclared param '$(params.%s)'", templateParamName),
-					fmt.Sprintf("[%d]", i),
-				)
-				fieldErr.Details = fmt.Sprintf("'$(params.%s)' must be declared in spec.params", templateParamName)
-				return fieldErr
-			}
+			paramUsages[templateParamName] = struct{}{}
 		}
 	}
-
+	for _, param := range params {
+		if _, ok := paramUsages[param.Name]; !ok {
+			fieldErr := apis.ErrInvalidValue(
+				fmt.Sprintf("unused param: %s", param.Name),
+				fmt.Sprintf(".%s", param.Name),
+			)
+			fieldErr.Details = fmt.Sprintf("TriggerTemplate param declared but not used: '%s'", param.Name)
+			return fieldErr
+		}
+	}
 	return nil
 }

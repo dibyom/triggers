@@ -29,14 +29,16 @@ import (
 	"knative.dev/pkg/apis"
 )
 
+var noParamResourceTemplate = runtime.RawExtension{
+	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1alpha1","spec":{},"status":{}}`),
+}
+
+var v1alpha1ResourceTemplate = runtime.RawExtension{
+	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1alpha1","spec": "$(params.foo)","status":{}}`),
+}
+
 var simpleResourceTemplate = runtime.RawExtension{
-	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1alpha1","metadata":{"creationTimestamp":null},"spec":{},"status":{}}`),
-}
-var v1beta1ResourceTemplate = runtime.RawExtension{
-	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1beta1","metadata":{"creationTimestamp":null},"spec":{},"status":{}}`),
-}
-var paramResourceTemplate = runtime.RawExtension{
-	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1alpha1","metadata":{"creationTimestamp":null},"spec": "$(params.foo)","status":{}}`),
+	Raw: []byte(`{"kind":"PipelineRun","apiVersion":"tekton.dev/v1beta1","metadata":{"creationTimestamp":null},"spec": "$(params.foo)","status":{}}`),
 }
 
 func TestTriggerTemplate_Validate(t *testing.T) {
@@ -73,13 +75,32 @@ func TestTriggerTemplate_Validate(t *testing.T) {
 				b.TriggerTemplateParam("foo", "desc", "val"),
 				b.TriggerResourceTemplate(simpleResourceTemplate))),
 			want: nil,
-		}, {
-			name: "valid v1beta1 template",
+		},
+		{
+			name: "valid template with no params",
 			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
-				b.TriggerTemplateParam("foo", "desc", "val"),
-				b.TriggerResourceTemplate(v1beta1ResourceTemplate))),
+				b.TriggerResourceTemplate(noParamResourceTemplate))),
 			want: nil,
 		}, {
+			name: "valid v1alpha1 template",
+			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
+				b.TriggerTemplateParam("foo", "desc", "val"),
+				b.TriggerResourceTemplate(v1alpha1ResourceTemplate))),
+			want: nil,
+		},
+		{
+			name: "param declared but not used",
+			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
+				b.TriggerTemplateParam("foo", "desc", "val"),
+				b.TriggerResourceTemplate(noParamResourceTemplate),
+			)),
+			want: &apis.FieldError{
+				Message: "invalid value: unused param: foo",
+				Paths:   []string{"spec.params.foo"},
+				Details: "TriggerTemplate param declared but not used: 'foo'",
+			},
+		},
+		{
 			name: "missing resource template",
 			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
 				b.TriggerTemplateParam("foo", "desc", "val"))),
@@ -127,24 +148,20 @@ func TestTriggerTemplate_Validate(t *testing.T) {
 			name: "params used in resource template are declared",
 			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
 				b.TriggerTemplateParam("foo", "desc", "val"),
-				b.TriggerResourceTemplate(paramResourceTemplate))),
+				b.TriggerResourceTemplate(simpleResourceTemplate))),
 			want: nil,
 		}, {
 			name: "params used in resource template are not declared",
 			template: b.TriggerTemplate("tt", "foo", b.TriggerTemplateSpec(
-				b.TriggerResourceTemplate(paramResourceTemplate))),
-			want: &apis.FieldError{
-				Message: "invalid value: undeclared param '$(params.foo)'",
-				Paths:   []string{"spec.resourcetemplates[0]"},
-				Details: "'$(params.foo)' must be declared in spec.params",
-			},
+				b.TriggerResourceTemplate(simpleResourceTemplate))),
+			want: nil, // resourceTemplate can contain an Pipeline or a Task that has its own params
 		}}
 
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			got := tc.template.Validate(context.Background())
-			if d := cmp.Diff(got, tc.want, cmpopts.IgnoreUnexported(apis.FieldError{})); d != "" {
-				t.Errorf("TriggerTemplate Validation failed: %s", d)
+			if d := cmp.Diff(tc.want, got, cmpopts.IgnoreUnexported(apis.FieldError{})); d != "" {
+				t.Errorf("TriggerTemplate Validation failed. Diff (-want/+got):  %s", d)
 			}
 		})
 	}
