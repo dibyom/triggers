@@ -24,7 +24,8 @@ import (
 	"github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	triggersclient "github.com/tektoncd/triggers/pkg/client/injection/client"
 	eventlistenerinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/eventlistener"
-	"github.com/tektoncd/triggers/pkg/reconciler"
+
+	eventlistenerreconciler "github.com/tektoncd/triggers/pkg/client/injection/reconciler/triggers/v1alpha1/eventlistener"
 	"k8s.io/client-go/tools/cache"
 	kubeclient "knative.dev/pkg/client/injection/kube/client"
 	deployinformer "knative.dev/pkg/client/injection/kube/informers/apps/v1/deployment"
@@ -47,22 +48,25 @@ func NewController(ctx context.Context, cmw configmap.Watcher) *controller.Impl 
 	deploymentInformer := deployinformer.Get(ctx)
 	serviceInformer := serviceinformer.Get(ctx)
 
-	opt := reconciler.Options{
-		KubeClientSet:     kubeclientset,
-		TriggersClientSet: triggersclientset,
-		ConfigMapWatcher:  cmw,
-		Logger:            logger,
-		ResyncPeriod:      resyncPeriod,
-	}
-
 	c := &Reconciler{
-		Base:                reconciler.NewBase(opt, eventListenerAgentName),
+		KubeClientSet:       kubeclientset,
+		TriggersClientSet:   triggersclientset,
 		eventListenerLister: eventListenerInformer.Lister(),
 		systemNamespace:     os.Getenv("SYSTEM_NAMESPACE"),
 	}
-	impl := controller.NewImpl(c, c.Logger, eventListenerControllerName)
 
-	c.Logger.Info("Setting up event handlers")
+	//impl := controller.NewImpl(c, logger, eventListenerControllerName)
+	impl := eventlistenerreconciler.NewImpl(ctx, c, func(impl *controller.Impl) controller.Options {
+		// TODO: FIXUP configMap watcher
+		//configStore := config.NewStore(images, logger.Named("config-store"))
+		//configStore.WatchConfigs(cmw)
+		return controller.Options{
+			AgentName: eventListenerControllerName,
+			//ConfigStore: configStore,
+		}
+	})
+
+	logger.Info("Setting up event handlers")
 	eventListenerInformer.Informer().AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    impl.Enqueue,
 		UpdateFunc: controller.PassNew(impl.Enqueue),

@@ -19,27 +19,17 @@ package reconciler
 import (
 	"time"
 
-	triggersclientset "github.com/tektoncd/triggers/pkg/client/clientset/versioned"
 	triggersScheme "github.com/tektoncd/triggers/pkg/client/clientset/versioned/scheme"
 	"go.uber.org/zap"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	typedcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
-	cachingclientset "knative.dev/caching/pkg/client/clientset/versioned"
 	"knative.dev/pkg/configmap"
-	"knative.dev/pkg/logging/logkey"
 )
 
 // Options defines the common reconciler options.
 // We define this to reduce the boilerplate argument list when
 // creating our controllers.
 type Options struct {
-	KubeClientSet     kubernetes.Interface
-	TriggersClientSet triggersclientset.Interface
-	CachingClientSet  cachingclientset.Interface
-
 	ConfigMapWatcher configmap.Watcher
 	Logger           *zap.SugaredLogger
 	Recorder         record.EventRecorder
@@ -57,15 +47,6 @@ func (o Options) GetTrackerLease() time.Duration {
 
 // Base implements the core controller logic, given a Reconciler.
 type Base struct {
-	// KubeClientSet allows us to talk to the k8s for core APIs
-	KubeClientSet kubernetes.Interface
-
-	// TriggersClientSet allows us to configure triggers objects
-	TriggersClientSet triggersclientset.Interface
-
-	// CachingClientSet allows us to instantiate Image objects
-	CachingClientSet cachingclientset.Interface
-
 	// ConfigMapWatcher allows us to watch for ConfigMap changes.
 	ConfigMapWatcher configmap.Watcher
 
@@ -79,39 +60,6 @@ type Base struct {
 	// performance benefits, raw logger also preserves type-safety at
 	// the expense of slightly greater verbosity.
 	Logger *zap.SugaredLogger
-}
-
-// NewBase instantiates a new instance of Base implementing
-// the common & boilerplate code between our reconcilers.
-func NewBase(opt Options, controllerAgentName string) *Base {
-	// Enrich the logs with controller name
-	logger := opt.Logger.Named(controllerAgentName).With(zap.String(logkey.ControllerType, controllerAgentName))
-
-	// Use recorder provided in options if presents.   Otherwise, create a new one.
-	recorder := opt.Recorder
-
-	if recorder == nil {
-		// Create event broadcaster
-		logger.Debug("Creating event broadcaster")
-		eventBroadcaster := record.NewBroadcaster()
-		eventBroadcaster.StartLogging(logger.Named("event-broadcaster").Infof)
-		eventBroadcaster.StartRecordingToSink(&typedcorev1.EventSinkImpl{Interface: opt.KubeClientSet.CoreV1().Events("")})
-
-		recorder = eventBroadcaster.NewRecorder(scheme.Scheme, corev1.EventSource{Component: controllerAgentName})
-	} else {
-		logger.Debug("Using recorder from option")
-	}
-
-	base := &Base{
-		KubeClientSet:     opt.KubeClientSet,
-		TriggersClientSet: opt.TriggersClientSet,
-		CachingClientSet:  opt.CachingClientSet,
-		ConfigMapWatcher:  opt.ConfigMapWatcher,
-		Recorder:          recorder,
-		Logger:            logger,
-	}
-
-	return base
 }
 
 func init() {

@@ -27,7 +27,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	listers "github.com/tektoncd/triggers/pkg/client/listers/triggers/v1alpha1"
-	"github.com/tektoncd/triggers/pkg/reconciler"
+	"go.uber.org/zap"
 	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -36,9 +36,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/kubernetes"
+	"knative.dev/pkg/logging"
+	pkgreconciler "knative.dev/pkg/reconciler"
 
-	"knative.dev/pkg/controller"
+	triggersclientset "github.com/tektoncd/triggers/pkg/client/clientset/versioned"
+	eventlistenerreconciler "github.com/tektoncd/triggers/pkg/client/injection/reconciler/triggers/v1alpha1/eventlistener"
+	cachingclientset "knative.dev/caching/pkg/client/clientset/versioned"
 )
 
 const (
@@ -80,50 +84,39 @@ var (
 
 // Reconciler implements controller.Reconciler for Configuration resources.
 type Reconciler struct {
-	*reconciler.Base
+
+	// KubeClientSet allows us to talk to the k8s for core APIs
+	KubeClientSet kubernetes.Interface
+
+	// TriggersClientSet allows us to configure triggers objects
+	TriggersClientSet triggersclientset.Interface
+
+	// CachingClientSet allows us to instantiate Image objects
+	CachingClientSet cachingclientset.Interface
+
 	// listers index properties about resources
 	eventListenerLister listers.EventListenerLister
 	systemNamespace     string
 }
 
-// Check that our Reconciler implements controller.Reconciler
-var _ controller.Reconciler = (*Reconciler)(nil)
+var (
+	// Check that our Reconciler implements controller.Reconciler		// Check that our Reconciler implements pipelinerunreconciler.Interface
+	_ eventlistenerreconciler.Interface = (*Reconciler)(nil)
+)
 
 // Reconcile compares the actual state with the desired, and attempts to
 // converge the two.
-func (c *Reconciler) Reconcile(ctx context.Context, key string) (returnError error) {
-	c.Logger.Infof("event-listener-reconcile %s", key)
-	// Convert the namespace/name string into a distinct namespace and name
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		c.Logger.Errorf("invalid resource key: %s", key)
-		return nil
-	}
+func (c *Reconciler) ReconcileKind(ctx context.Context, el *v1alpha1.EventListener) pkgreconciler.Event {
+	//if errors.IsNotFound(err) {
+	//// The resource no longer exists, in which case we stop processing.
 
-	// Get the EventListener resource
-	original, err := c.eventListenerLister.EventListeners(namespace).Get(name)
-	if errors.IsNotFound(err) {
-		// The resource no longer exists, in which case we stop processing.
-		c.Logger.Infof("EventListener %q in work queue no longer exists", key)
-		cfgs, err := c.eventListenerLister.EventListeners(namespace).List(labels.Everything())
-		if err != nil {
-			return err
-		}
-		if len(cfgs) > 0 || namespace == c.systemNamespace {
-			return nil
-		}
-		err = c.KubeClientSet.CoreV1().ConfigMaps(namespace).Delete(eventListenerConfigMapName, &metav1.DeleteOptions{})
-		if errors.IsNotFound(err) {
-			return nil
-		}
-		return err
-	} else if err != nil {
-		c.Logger.Errorf("Error retrieving EventListener %q: %s", name, err)
-		return err
-	}
+	//} else if err != nil {
+	//logger.Errorf("Error retrieving EventListener %q: %s", name, err)
+	//return err
+	//}
 
 	// Don't modify the informer's copy
-	el := original.DeepCopy()
+	_ = el.DeepCopy()
 	// Initial reconciliation
 	if equality.Semantic.DeepEqual(el.Status, v1alpha1.EventListenerStatus{}) {
 		el.Status.InitializeConditions()
@@ -133,17 +126,40 @@ func (c *Reconciler) Reconcile(ctx context.Context, key string) (returnError err
 	// Reconcile this copy of the EventListener and then write back any status
 	// updates
 	reconcileErr := c.reconcile(ctx, el)
-	if !equality.Semantic.DeepEqual(original.Status, el.Status) {
-		_, err = c.TriggersClientSet.TriggersV1alpha1().EventListeners(namespace).UpdateStatus(el)
-		if err != nil {
-			c.Logger.Warn("Failed to update EventListener status", err.Error())
-			return err
-		}
-	}
+
+	/*if !equality.Semantic.DeepEqual(original.Status, el.Status) {*/
+	//_, err = c.TriggersClientSet.TriggersV1alpha1().EventListeners(namespace).UpdateStatus(el)
+	//if err != nil {
+	//logger.Warn("Failed to update EventListener status", err.Error())
+	//return err
+	//}
+	/*}*/
 	return reconcileErr
 }
 
+// Optionally, use FinalizeKind to add finalizers. FinalizeKind will be called
+// when the resource is deleted.
+func (r *Reconciler) FinalizeKind(ctx context.Context, el *v1alpha1.EventListener) pkgreconciler.Event {
+	cfgs, err := r.eventListenerLister.EventListeners(el.Namespace).List(labels.Everything())
+	if err != nil {
+		return err
+	}
+	if len(cfgs) > 0 || el.Namespace == r.systemNamespace {
+		return nil
+	}
+	err = r.KubeClientSet.CoreV1().ConfigMaps(el.Namespace).Delete(eventListenerConfigMapName, &metav1.DeleteOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
 func (c *Reconciler) reconcile(ctx context.Context, el *v1alpha1.EventListener) error {
+	logger := logging.FromContext(ctx)
+
 	// We may be reading a version of the object that was stored at an older version
 	// and may not have had all of the assumed default specified.
 	el.SetDefaults(v1alpha1.WithUpgradeViaDefaulting(ctx))
@@ -151,12 +167,8 @@ func (c *Reconciler) reconcile(ctx context.Context, el *v1alpha1.EventListener) 
 	// TODO(dibyom): Once #70 is merged, we should validate triggerTemplate here
 	// and update the StatusCondition
 
-	// TODO(vtereso): Create the resources within the reconciler, but restrict
-	// updates within an admission webhook instead. The reconciler is resolving
-	// behavior after it has been approved, which is from the wrong point of the
-	// lifecycle and presents inherent problems.
-	serviceReconcileError := c.reconcileService(el)
-	deploymentReconcileError := c.reconcileDeployment(el)
+	serviceReconcileError := c.reconcileService(logger, el)
+	deploymentReconcileError := c.reconcileDeployment(logger, el)
 	return wrapError(serviceReconcileError, deploymentReconcileError)
 }
 
@@ -172,7 +184,7 @@ func reconcileObjectMeta(oldMeta *metav1.ObjectMeta, newMeta metav1.ObjectMeta) 
 	return
 }
 
-func (c *Reconciler) reconcileService(el *v1alpha1.EventListener) error {
+func (c *Reconciler) reconcileService(logger *zap.SugaredLogger, el *v1alpha1.EventListener) error {
 	service := &corev1.Service{
 		ObjectMeta: generateObjectMeta(el),
 		Spec: corev1.ServiceSpec{
@@ -189,7 +201,7 @@ func (c *Reconciler) reconcileService(el *v1alpha1.EventListener) error {
 				},
 			},
 		},
-	}
+}
 	existingService, err := c.KubeClientSet.CoreV1().Services(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName, metav1.GetOptions{})
 	switch {
 	case err == nil:
@@ -212,49 +224,49 @@ func (c *Reconciler) reconcileService(el *v1alpha1.EventListener) error {
 		}
 		if updated {
 			if _, err := c.KubeClientSet.CoreV1().Services(el.Namespace).Update(existingService); err != nil {
-				c.Logger.Errorf("Error updating EventListener Service: %s", err)
+				logger.Errorf("Error updating EventListener Service: %s", err)
 				return err
 			}
-			c.Logger.Infof("Updated EventListener Service %s in Namespace %s", existingService.Namespace, el.Namespace)
+			logger.Infof("Updated EventListener Service %s in Namespace %s", existingService.Namespace, el.Namespace)
 		}
 	case errors.IsNotFound(err):
 		// Create the EventListener Service
 		_, err = c.KubeClientSet.CoreV1().Services(el.Namespace).Create(service)
 		el.Status.SetExistsCondition(v1alpha1.ServiceExists, err)
 		if err != nil {
-			c.Logger.Errorf("Error creating EventListener Service: %s", err)
+			logger.Errorf("Error creating EventListener Service: %s", err)
 			return err
 		}
 		el.Status.SetAddress(listenerHostname(service.Name, el.Namespace, *ElPort))
-		c.Logger.Infof("Created EventListener Service %s in Namespace %s", service.Name, el.Namespace)
+		logger.Infof("Created EventListener Service %s in Namespace %s", service.Name, el.Namespace)
 	default:
-		c.Logger.Error(err)
+		logger.Error(err)
 		return err
 	}
 	return nil
 }
 
-func (c *Reconciler) reconcileLoggingConfig(el *v1alpha1.EventListener) error {
+func (c *Reconciler) reconcileLoggingConfig(logger *zap.SugaredLogger, el *v1alpha1.EventListener) error {
 	_, err := c.KubeClientSet.CoreV1().ConfigMaps(el.Namespace).Get(eventListenerConfigMapName, metav1.GetOptions{})
 	if errors.IsNotFound(err) {
 		// create default config-logging ConfigMap
 		_, err = c.KubeClientSet.CoreV1().ConfigMaps(el.Namespace).Create(defaultLoggingConfigMap())
 		if err != nil {
-			c.Logger.Errorf("Failed to create logging config: %s.  EventListener won't start.", err)
+			logger.Errorf("Failed to create logging config: %s.  EventListener won't start.", err)
 			return err
 		}
 	} else if err != nil {
-		c.Logger.Errorf("Error retrieving ConfigMap %q: %s", eventListenerConfigMapName, err)
+		logger.Errorf("Error retrieving ConfigMap %q: %s", eventListenerConfigMapName, err)
 		return err
 	}
 	return nil
 }
 
-func (c *Reconciler) reconcileDeployment(el *v1alpha1.EventListener) error {
+func (c *Reconciler) reconcileDeployment(logger *zap.SugaredLogger, el *v1alpha1.EventListener) error {
 	// check logging config, create if it doesn't exist
-	err := c.reconcileLoggingConfig(el)
+	err := c.reconcileLoggingConfig(logger, el)
 	if err != nil {
-		c.Logger.Error(err)
+		logger.Error(err)
 		return err
 	}
 
@@ -407,23 +419,23 @@ func (c *Reconciler) reconcileDeployment(el *v1alpha1.EventListener) error {
 		}
 		if updated {
 			if _, err := c.KubeClientSet.AppsV1().Deployments(el.Namespace).Update(existingDeployment); err != nil {
-				c.Logger.Errorf("Error updating EventListener Deployment: %s", err)
+				logger.Errorf("Error updating EventListener Deployment: %s", err)
 				return err
 			}
-			c.Logger.Infof("Updated EventListener Deployment %s in Namespace %s", existingDeployment.Name, el.Namespace)
+			logger.Infof("Updated EventListener Deployment %s in Namespace %s", existingDeployment.Name, el.Namespace)
 		}
 	case errors.IsNotFound(err):
 		// Create the EventListener Deployment
 		deployment, err = c.KubeClientSet.AppsV1().Deployments(el.Namespace).Create(deployment)
 		el.Status.SetExistsCondition(v1alpha1.DeploymentExists, err)
 		if err != nil {
-			c.Logger.Errorf("Error creating EventListener Deployment: %s", err)
+			logger.Errorf("Error creating EventListener Deployment: %s", err)
 			return err
 		}
 		el.Status.SetDeploymentConditions(deployment.Status.Conditions)
-		c.Logger.Infof("Created EventListener Deployment %s in Namespace %s", deployment.Name, el.Namespace)
+		logger.Infof("Created EventListener Deployment %s in Namespace %s", deployment.Name, el.Namespace)
 	default:
-		c.Logger.Error(err)
+		logger.Error(err)
 		return err
 	}
 	return nil
