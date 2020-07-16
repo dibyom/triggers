@@ -28,10 +28,10 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-	"go.uber.org/zap"
-
 	V1alpha1Client "github.com/tektoncd/triggers/pkg/client/clientset/versioned/typed/triggers/v1alpha1"
+	sink "github.com/tektoncd/triggers/pkg/sink"
 	"github.com/tektoncd/triggers/pkg/template"
+	"go.uber.org/zap"
 	"k8s.io/apimachinery/pkg/runtime/serializer/streaming"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -170,7 +170,6 @@ func GetKubeClient(kubeconfig string) (*V1alpha1Client.TriggersV1alpha1Client, e
 
 func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event []byte, eventID string, eventLog *zap.SugaredLogger) error {
 	client, err := GetKubeClient("kubeClient")
-
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -180,41 +179,60 @@ func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event 
 		return errors.New("EventListenerTrigger not defined")
 	}
 
-	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, t.Name))
+	el, _ := triggersv1.ToEventListenerTrigger(*t)
+	fmt.Println(el)
+
+	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, el.Name))
 	fmt.Print(log)
 
-	// finalPayload, header, err := client.executeInterceptors(t, request, event, log)
-	// if err != nil {
-	// 	log.Error(err)
-	// 	return err
+	var r sink.Sink
+	
+	// s := sink.Sink{
+	// 	KubeClientSet          kubernetes.Interface,
+	// 	TriggersClient         triggersclientset.Interface,
+	// 	DiscoveryClient        discoveryclient.ServerResourcesInterface,
+	// 	DynamicClient          dynamic.Interface,
+	// 	HTTPClient             *http.Client,
+	// 	EventListenerName      string,
+	// 	EventListenerNamespace string,
+	// 	Logger                 *zap.SugaredLogger,
+	// 	Auth                   AuthOverride,
 	// }
 
-	// rt, err := template.ResolveTrigger(*t,
-	// 	r.TriggersClient.TriggersV1alpha1().TriggerBindings(r.EventListenerNamespace).Get,
-	// 	r.TriggersClient.TriggersV1alpha1().ClusterTriggerBindings().Get,
-	// 	r.TriggersClient.TriggersV1alpha1().TriggerTemplates(r.EventListenerNamespace).Get)
-	// if err != nil {
-	// 	log.Error(err)
-	// 	return err
-	// }
+	finalPayload, header, err := r.executeInterceptors(el, request, event, log)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	fmt.Print(finalPayload)
+	fmt.Print(header)
 
-	// params, err := template.ResolveParams(rt, finalPayload, header)
-	// if err != nil {
-	// 	log.Error(err)
-	// 	return err
-	// }
+	rt, err := template.ResolveTrigger(el,
+		r.TriggersClient.TriggersV1alpha1().TriggerBindings().Get,
+		r.TriggersClient.TriggersV1alpha1().ClusterTriggerBindings().Get,
+		r.TriggersClient.TriggersV1alpha1().TriggerTemplates().Get)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
 
-	// log.Infof("ResolvedParams : %+v", params)
-	// resources := template.ResolveResources(rt.TriggerTemplate, params)
-	// token, err := r.retrieveAuthToken(t.ServiceAccount, eventLog)
-	// if err != nil {
-	// 	log.Error(err)
-	// 	return err
-	// }
-	// if err := r.createResources(token, resources, t.Name, eventID, log); err != nil {
-	// 	log.Error(err)
-	// 	return err
-	// }
+	params, err := template.ResolveParams(rt, finalPayload, header)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+
+	log.Infof("ResolvedParams : %+v", params)
+	resources := template.ResolveResources(rt.TriggerTemplate, params)
+	token, err := r.retrieveAuthToken(t.ServiceAccount, eventLog)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	if err := r.createResources(token, resources, t.Name, eventID, log); err != nil {
+		log.Error(err)
+		return err
+	}
 	return nil
 }
 
