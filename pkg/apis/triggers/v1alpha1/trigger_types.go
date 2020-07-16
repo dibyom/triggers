@@ -42,15 +42,21 @@ type TriggerSpec struct {
 	ServiceAccount *corev1.ObjectReference `json:"serviceAccount,omitempty"`
 }
 
+<<<<<<< HEAD
 // type TriggerSpecTemplate = EventListenerTemplate
 
+=======
+>>>>>>> 7d921c834dc522d9d0a658dc4e3a17e57ec23cb5
 type TriggerSpecTemplate struct {
 	Name       string `json:"name"`
 	APIVersion string `json:"apiversion,omitempty"`
 }
 
+<<<<<<< HEAD
 // type TriggerSpecBinding = EventListenerBinding
 
+=======
+>>>>>>> 7d921c834dc522d9d0a658dc4e3a17e57ec23cb5
 type TriggerSpecBinding struct {
 	Name       string              `json:"name,omitempty"`
 	Kind       TriggerBindingKind  `json:"kind,omitempty"`
@@ -59,8 +65,11 @@ type TriggerSpecBinding struct {
 	APIVersion string              `json:"apiversion,omitempty"`
 }
 
+<<<<<<< HEAD
 func BindingConvert(tb TriggerBinding)
 
+=======
+>>>>>>> 7d921c834dc522d9d0a658dc4e3a17e57ec23cb5
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
