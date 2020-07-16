@@ -61,7 +61,7 @@ func isServiceAccountToken(secret *corev1.Secret, sa *corev1.ServiceAccount) boo
 	return true
 }
 
-func (r Sink) retrieveAuthToken(saRef *corev1.ObjectReference, eventLog *zap.SugaredLogger) (string, error) {
+func (r Sink) RetrieveAuthToken(saRef *corev1.ObjectReference, eventLog *zap.SugaredLogger) (string, error) {
 	if saRef == nil {
 		return "", nil
 	}

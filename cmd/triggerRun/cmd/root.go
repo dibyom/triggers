@@ -186,20 +186,7 @@ func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event 
 	fmt.Print(log)
 
 	var r sink.Sink
-	
-	// s := sink.Sink{
-	// 	KubeClientSet          kubernetes.Interface,
-	// 	TriggersClient         triggersclientset.Interface,
-	// 	DiscoveryClient        discoveryclient.ServerResourcesInterface,
-	// 	DynamicClient          dynamic.Interface,
-	// 	HTTPClient             *http.Client,
-	// 	EventListenerName      string,
-	// 	EventListenerNamespace string,
-	// 	Logger                 *zap.SugaredLogger,
-	// 	Auth                   AuthOverride,
-	// }
-
-	finalPayload, header, err := r.executeInterceptors(el, request, event, log)
+	finalPayload, header, err := r.ExecuteInterceptors(&el, request, event, log)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -208,9 +195,9 @@ func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event 
 	fmt.Print(header)
 
 	rt, err := template.ResolveTrigger(el,
-		r.TriggersClient.TriggersV1alpha1().TriggerBindings().Get,
+		r.TriggersClient.TriggersV1alpha1().TriggerBindings("").Get,
 		r.TriggersClient.TriggersV1alpha1().ClusterTriggerBindings().Get,
-		r.TriggersClient.TriggersV1alpha1().TriggerTemplates().Get)
+		r.TriggersClient.TriggersV1alpha1().TriggerTemplates("").Get)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -224,12 +211,12 @@ func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event 
 
 	log.Infof("ResolvedParams : %+v", params)
 	resources := template.ResolveResources(rt.TriggerTemplate, params)
-	token, err := r.retrieveAuthToken(t.ServiceAccount, eventLog)
+	token, err := r.RetrieveAuthToken(t.ServiceAccount, eventLog)
 	if err != nil {
 		log.Error(err)
 		return err
 	}
-	if err := r.createResources(token, resources, t.Name, eventID, log); err != nil {
+	if err := r.CreateResources(token, resources, t.Name, eventID, log); err != nil {
 		log.Error(err)
 		return err
 	}
