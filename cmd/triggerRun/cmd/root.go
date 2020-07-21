@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -58,13 +59,6 @@ func init() {
 
 func rootRun(cmd *cobra.Command, args []string) {
 	// TODO: Not implemented
-	// client, err := GetKubeClient("kubeClient")
-
-	// if err != nil {
-	// 	fmt.Println(err)
-	// }
-	// fmt.Println(client)
-
 }
 
 func trigger(w io.Writer, triggerFile, httpPath string) error {
@@ -85,37 +79,21 @@ func trigger(w io.Writer, triggerFile, httpPath string) error {
 		return fmt.Errorf("error reading triggers: %w", err)
 	}
 
-	t := template.ResolvedTrigger{
-		// Triggers: triggers,
+	client, err := GetKubeClient("kubeClient")
+	if err != nil {
+		fmt.Println(err)
 	}
-
-	fmt.Printf("%+v", t)
-
-	fmt.Printf("%+v", r.Header)
-	fmt.Println("-------------")
-	fmt.Printf("%+v", r.Body)
-	fmt.Println("-------------")
-	fmt.Printf("%+v", body)
-	fmt.Printf("%+v", triggers)
-
-	// ResolveParams's alternative
-	// https://github.com/tektoncd/triggers/blob/69e02ea03064bb08b7b53638f3c2a1ef9508d5cf/pkg/sink/sink.go#L150
-
-	// params, err := template.ResolveParams(t, body, r.Header)
-	// if err != nil {
-	//  return fmt.Errorf("error resolving params: %w", err)
-	// }
-
-	// // Sort results for stable output.
-	// sort.SliceStable(params, func(i, j int) bool {
-	//  return params[i].Name < params[j].Name
-	// })
-
-	// enc := json.NewEncoder(w)
-	// enc.SetIndent("", "  ")
-	// if err := enc.Encode(params); err != nil {
-	//  return fmt.Errorf("error encoding params: %w", err)
-	// }
+	var s sink.Sink
+	for _, tri := range triggers {
+		eventID := template.UID()
+		eventLog := s.Logger.With(zap.String(triggersv1.EventIDLabelKey, eventID))
+		output, err := processTriggerSpec(client, &tri.Spec,
+			r, body, eventID, eventLog)
+		if err != nil {
+			return fmt.Errorf("fail to build config from the flags: %w", err)
+		}
+		fmt.Print(output)
+	}
 
 	return nil
 }
@@ -168,59 +146,46 @@ func GetKubeClient(kubeconfig string) (*V1alpha1Client.TriggersV1alpha1Client, e
 	return V1alpha1Client.NewForConfig(config)
 }
 
-func processTriggerSpec(t *triggersv1.TriggerSpec, request *http.Request, event []byte, eventID string, eventLog *zap.SugaredLogger) error {
-	client, err := GetKubeClient("kubeClient")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(client)
-
+func processTriggerSpec(client *V1alpha1Client.TriggersV1alpha1Client, t *triggersv1.TriggerSpec, request *http.Request, event []byte, eventID string, eventLog *zap.SugaredLogger) ([]json.RawMessage, error) {
 	if t == nil {
-		return errors.New("EventListenerTrigger not defined")
+		return nil, errors.New("EventListenerTrigger not defined")
 	}
 
 	el, _ := triggersv1.ToEventListenerTrigger(*t)
-	fmt.Println(el)
-
 	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, el.Name))
-	fmt.Print(log)
-
 	var r sink.Sink
 	finalPayload, header, err := r.ExecuteInterceptors(&el, request, event, log)
 	if err != nil {
 		log.Error(err)
-		return err
+		return nil, err
 	}
-	fmt.Print(finalPayload)
-	fmt.Print(header)
 
 	rt, err := template.ResolveTrigger(el,
-		r.TriggersClient.TriggersV1alpha1().TriggerBindings("").Get,
-		r.TriggersClient.TriggersV1alpha1().ClusterTriggerBindings().Get,
-		r.TriggersClient.TriggersV1alpha1().TriggerTemplates("").Get)
+		client.TriggerBindings("").Get,
+		client.ClusterTriggerBindings().Get,
+		client.TriggerTemplates("").Get)
 	if err != nil {
 		log.Error(err)
-		return err
+		return nil, err
 	}
 
 	params, err := template.ResolveParams(rt, finalPayload, header)
 	if err != nil {
 		log.Error(err)
-		return err
+		return nil, err
 	}
 
 	log.Infof("ResolvedParams : %+v", params)
 	resources := template.ResolveResources(rt.TriggerTemplate, params)
-	token, err := r.RetrieveAuthToken(t.ServiceAccount, eventLog)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	if err := r.CreateResources(token, resources, t.Name, eventID, log); err != nil {
-		log.Error(err)
-		return err
-	}
-	return nil
+	// for resource := range resources {
+	// 	fmt.Println(resource)
+	// }
+
+	// if err := r.CreateResources("token", resources, t.Name, eventID, log); err != nil {
+	// 	log.Error(err)
+	// 	return err
+	// }
+	return resources, nil
 }
 
 // Execute runs the command.
