@@ -27,11 +27,16 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	pipelinev1alpha1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1alpha1"
+	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	"github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-	v1alpha1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
+	triggersclientset "github.com/tektoncd/triggers/pkg/client/clientset/versioned"
+	"github.com/tektoncd/triggers/test"
 	"go.uber.org/zap"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	rtesting "knative.dev/pkg/reconciler/testing"
 )
 
 func TestReadTrigger(t *testing.T) {
@@ -93,41 +98,115 @@ X-Header: testheader
 
 func Test_processTriggerSpec(t *testing.T) {
 	type args struct {
-		t        *triggersv1.TriggerSpec
-		request  *http.Request
-		event    []byte
-		eventID  string
-		eventLog *zap.SugaredLogger
+		t         *triggersv1.TriggerSpec
+		request   *http.Request
+		event     []byte
+		resources test.Resources
 	}
 	eventBody := json.RawMessage(`{"repository": {"links": {"clone": [{"href": "testurl", "name": "ssh"}, {"href": "testurl", "name": "http"}]}}, "changes": [{"ref": {"displayId": "test-branch"}}]}`)
 	r, err := http.NewRequest("POST", "URL", bytes.NewReader(eventBody))
 	if err != nil {
-		t.Errorf("Cannot create a new request:", err)
+		t.Errorf("Cannot create a new request:%s", err)
+	}
+	taskRunTemplate := pipelinev1alpha1.TaskRun{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "tekton.dev/v1alpha1",
+			Kind:       "TaskRun",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-taskrun",
+			Namespace: "default",
+			Labels: map[string]string{
+				"someLabel": "$(params.foo)",
+			},
+		},
+		Spec: pipelinev1alpha1.TaskRunSpec{
+			TaskRef: &v1beta1.TaskRef{
+				Name: "my-task", // non-existent task; just for testing
+			},
+		},
+	}
+	trBytes, err := json.Marshal(taskRunTemplate)
+	if err != nil {
+		t.Fatalf("failed to marshall taskrun to json: %v", err)
 	}
 
-	logger, _ := zap.NewProduction()
+	triggerTemplate := triggersv1.TriggerTemplate{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "a-template",
+			Namespace: "default",
+		},
+		Spec: triggersv1.TriggerTemplateSpec{
+			Params: []triggersv1.ParamSpec{{
+				Name: "foo",
+			}},
+			ResourceTemplates: []triggersv1.TriggerResourceTemplate{{
+				runtime.RawExtension{Raw: trBytes},
+			}},
+		},
+	}
+
+	triggerBinding := v1alpha1.TriggerBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "a-triggerBinding",
+			Namespace: "default",
+		},
+		Spec: triggersv1.TriggerBindingSpec{
+			Params: []triggersv1.Param{{
+				Name:  "foo",
+				Value: "bar",
+			}},
+		},
+	}
+
+	wantTaskRun := pipelinev1alpha1.TaskRun{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "tekton.dev/v1alpha1",
+			Kind:       "TaskRun",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-taskrun",
+			Namespace: "default",
+			Labels: map[string]string{
+				"someLabel": "bar", // replaced with the value of foo from bar
+			},
+		},
+		Spec: pipelinev1alpha1.TaskRunSpec{
+			TaskRef: taskRunTemplate.Spec.TaskRef, // non-existent task; just for testing
+		},
+	}
+	wantTrBytes, err := json.Marshal(wantTaskRun)
+	if err != nil {
+		t.Fatalf("failed to marshal wantTaskrun: %v", err)
+	}
+
 	tests := []struct {
 		name    string
 		args    args
 		want    []json.RawMessage
 		wantErr bool
 	}{
-		{name: "testing-name",
+		{
+			name: "testing-name",
 			args: args{
 				t: &v1alpha1.TriggerSpec{
 					Bindings: []*v1alpha1.TriggerSpecBinding{
-						{Name: "triggerSpecBinding1"},
+						{Name: "triggerSpecBinding1"}, // These should be references to TriggerBindings defined below
 						{Name: "triggerSpecBinding2"},
 					},
 					Template: v1alpha1.TriggerSpecTemplate{
-						Name: "triggerSpecTemplate",
+						Name: "triggerSpecTemplate", // This should be a reference to a TriggerTemplate defined below
 					},
 				},
-				request:  r,
-				event:    eventBody,
-				eventLog: logger.Sugar(),
+				request: r,
+				event:   eventBody,
+				resources: test.Resources{
+					// Add any resources that we need to create with a fake client
+					TriggerBindings:  []*v1alpha1.TriggerBinding{&triggerBinding},
+					TriggerTemplates: []*triggersv1.TriggerTemplate{&triggerTemplate},
+				},
 			},
-			want: []json.RawMessage{},
+			want: []json.RawMessage{wantTrBytes},
 		},
 	}
 
@@ -135,7 +214,11 @@ func Test_processTriggerSpec(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := processTriggerSpec(tt.args.t, tt.args.request, tt.args.event, tt.args.eventID, tt.args.eventLog)
+			eventID := "some-id"
+			logger, _ := zap.NewProduction()
+			eventLog := logger.Sugar()
+			client := GetFakeTriggersClient(t, tt.args.resources)
+			got, err := processTriggerSpec(client, tt.args.t, tt.args.request, tt.args.event, eventID, eventLog)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("processTriggerSpec() error = %v, wantErr %v", err, tt.wantErr)
 				return
@@ -149,4 +232,11 @@ func Test_processTriggerSpec(t *testing.T) {
 			}
 		})
 	}
+}
+
+func GetFakeTriggersClient(t *testing.T, resources test.Resources) triggersclientset.Interface {
+	t.Helper()
+	ctx, _ := rtesting.SetupFakeContext(t)
+	clients := test.SeedResources(t, ctx, resources)
+	return clients.Triggers
 }

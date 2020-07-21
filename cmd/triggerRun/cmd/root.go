@@ -29,7 +29,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-	V1alpha1Client "github.com/tektoncd/triggers/pkg/client/clientset/versioned/typed/triggers/v1alpha1"
+	triggersclientset "github.com/tektoncd/triggers/pkg/client/clientset/versioned"
+
 	sink "github.com/tektoncd/triggers/pkg/sink"
 	"github.com/tektoncd/triggers/pkg/template"
 	"go.uber.org/zap"
@@ -136,17 +137,17 @@ func readHTTP(path string) (*http.Request, error) {
 	return http.ReadRequest(bufio.NewReader(f))
 }
 
-func GetKubeClient(kubeconfig string) (*V1alpha1Client.TriggersV1alpha1Client, error) {
+func GetKubeClient(kubeconfig string) (triggersclientset.Interface, error) {
 	// use the current context in kubeconfig
 	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		return nil, fmt.Errorf("fail to build config from the flags: %w", err)
 	}
 
-	return V1alpha1Client.NewForConfig(config)
+	return triggersclientset.NewForConfig(config)
 }
 
-func processTriggerSpec(client *V1alpha1Client.TriggersV1alpha1Client, t *triggersv1.TriggerSpec, request *http.Request, event []byte, eventID string, eventLog *zap.SugaredLogger) ([]json.RawMessage, error) {
+func processTriggerSpec(client triggersclientset.Interface, t *triggersv1.TriggerSpec, request *http.Request, event []byte, eventID string, eventLog *zap.SugaredLogger) ([]json.RawMessage, error) {
 	if t == nil {
 		return nil, errors.New("EventListenerTrigger not defined")
 	}
@@ -159,11 +160,10 @@ func processTriggerSpec(client *V1alpha1Client.TriggersV1alpha1Client, t *trigge
 		log.Error(err)
 		return nil, err
 	}
-
 	rt, err := template.ResolveTrigger(el,
-		client.TriggerBindings("").Get,
-		client.ClusterTriggerBindings().Get,
-		client.TriggerTemplates("").Get)
+		client.TriggersV1alpha1().TriggerBindings("").Get,
+		client.TriggersV1alpha1().ClusterTriggerBindings().Get,
+		client.TriggersV1alpha1().TriggerTemplates("").Get)
 	if err != nil {
 		log.Error(err)
 		return nil, err
