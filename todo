@@ -1,0 +1,6 @@
+- Add a reconcile Test that shows that Finalizer is added
+- Ignore Finalizer in other threads
+- Add a TestFinalizer Test 
+  - Move all testConfigMap tests over to this one
+
+Reconciler Tests

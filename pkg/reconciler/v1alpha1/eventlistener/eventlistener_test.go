@@ -22,6 +22,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -31,12 +32,14 @@ import (
 	bldr "github.com/tektoncd/triggers/test/builder"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/rand"
 	k8stest "k8s.io/client-go/testing"
 	"knative.dev/pkg/apis"
+	duckv1alpha1 "knative.dev/pkg/apis/duck/v1alpha1"
 	fakekubeclient "knative.dev/pkg/client/injection/kube/client/fake"
 	"knative.dev/pkg/configmap"
 	rtesting "knative.dev/pkg/reconciler/testing"
@@ -61,8 +64,8 @@ func init() {
 }
 
 var (
-	generatedResourceName    string
-	ignoreLastTransitionTime = cmpopts.IgnoreTypes(apis.Condition{}.LastTransitionTime.Inner.Time)
+	generatedResourceName string
+	ignoreFields          = cmpopts.IgnoreTypes(apis.Condition{}.LastTransitionTime.Inner.Time, metav1.ObjectMeta{}.Finalizers)
 
 	// 0 indicates pre-reconciliation
 	eventListener0      *v1alpha1.EventListener
@@ -106,6 +109,14 @@ var (
 	generatedLabels = GenerateResourceLabels(eventListenerName)
 )
 
+// makeEL is a helper to build an EventListener for tests.
+// It generates a base EventListener that can then be modified by the passed in op function
+func makeEL(op func(el *v1alpha1.EventListener)) *v1alpha1.EventListener {
+	e := eventListener0.DeepCopy()
+	op(e)
+	return e
+}
+
 // getEventListenerTestAssets returns TestAssets that have been seeded with the
 // given test.Resources r where r represents the state of the system
 func getEventListenerTestAssets(t *testing.T, r test.Resources) (test.Assets, context.CancelFunc) {
@@ -136,429 +147,429 @@ func getEventListenerTestAssets(t *testing.T, r test.Resources) (test.Assets, co
 	}, cancel
 }
 
-/*func Test_reconcileService(t *testing.T) {*/
-//eventListener1 := eventListener0.DeepCopy()
-//eventListener1.Status.SetExistsCondition(v1alpha1.ServiceExists, nil)
-//eventListener1.Status.Address = &duckv1alpha1.Addressable{}
-//eventListener1.Status.Address.URL = &apis.URL{
-//Scheme: "http",
-//Host:   listenerHostname(generatedResourceName, namespace, *ElPort),
-//}
+func Test_reconcileService(t *testing.T) {
+	eventListener1 := eventListener0.DeepCopy()
+	eventListener1.Status.SetExistsCondition(v1alpha1.ServiceExists, nil)
+	eventListener1.Status.Address = &duckv1alpha1.Addressable{}
+	eventListener1.Status.Address.URL = &apis.URL{
+		Scheme: "http",
+		Host:   listenerHostname(generatedResourceName, namespace, *ElPort),
+	}
 
-//eventListener2 := eventListener1.DeepCopy()
-//eventListener2.Labels = updateLabel
+	eventListener2 := eventListener1.DeepCopy()
+	eventListener2.Labels = updateLabel
 
-//service1 := &corev1.Service{
-//ObjectMeta: generateObjectMeta(eventListener0),
-//Spec: corev1.ServiceSpec{
-//Selector: generatedLabels,
-//Type:     eventListener1.Spec.ServiceType,
-//Ports: []corev1.ServicePort{
-//{
-//Name:     eventListenerServicePortName,
-//Protocol: corev1.ProtocolTCP,
-//Port:     int32(*ElPort),
-//TargetPort: intstr.IntOrString{
-//IntVal: int32(*ElPort),
-//},
-//},
-//},
-//},
-//}
-//service2 := service1.DeepCopy()
-//service2.Labels = mergeLabels(generatedLabels, updateLabel)
-//service2.Spec.Selector = generatedLabels
+	service1 := &corev1.Service{
+		ObjectMeta: generateObjectMeta(eventListener0),
+		Spec: corev1.ServiceSpec{
+			Selector: generatedLabels,
+			Type:     eventListener1.Spec.ServiceType,
+			Ports: []corev1.ServicePort{
+				{
+					Name:     eventListenerServicePortName,
+					Protocol: corev1.ProtocolTCP,
+					Port:     int32(*ElPort),
+					TargetPort: intstr.IntOrString{
+						IntVal: int32(*ElPort),
+					},
+				},
+			},
+		},
+	}
+	service2 := service1.DeepCopy()
+	service2.Labels = mergeLabels(generatedLabels, updateLabel)
+	service2.Spec.Selector = generatedLabels
 
-//service3 := service1.DeepCopy()
-//service3.Spec.Ports[0].NodePort = 30000
+	service3 := service1.DeepCopy()
+	service3.Spec.Ports[0].NodePort = 30000
 
-//tests := []struct {
-//name           string
-//startResources test.Resources
-//endResources   test.Resources
-//}{
-//{
-//name: "create-service",
-//startResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener0},
-//},
-//endResources: test.Resources{
-//EventListeners: []*v1alpha1.EventListener{eventListener1},
-//Services:       []*corev1.Service{service1},
-//},
-//},
-//{
-//name: "eventlistener-label-update",
-//startResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener2},
-//Services:       []*corev1.Service{service1},
-//},
-//endResources: test.Resources{
-//EventListeners: []*v1alpha1.EventListener{eventListener2},
-//Services:       []*corev1.Service{service2},
-//},
-//},
-//{
-//name: "service-label-update",
-//startResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener1},
-//Services:       []*corev1.Service{service2},
-//},
-//endResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener1},
-//Services:       []*corev1.Service{service1},
-//},
-//},
-//{
-//name: "service-nodeport-update",
-//startResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener1},
-//Services:       []*corev1.Service{service3},
-//},
-//endResources: test.Resources{
-//Namespaces:     []*corev1.Namespace{namespaceResource},
-//EventListeners: []*v1alpha1.EventListener{eventListener1},
-//Services:       []*corev1.Service{service3},
-//},
-//},
-//}
-//for i := range tests {
-//t.Run(tests[i].name, func(t *testing.T) {
-//// Setup
-//testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
-//defer cancel()
+	tests := []struct {
+		name           string
+		startResources test.Resources
+		endResources   test.Resources
+	}{
+		{
+			name: "create-service",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener0},
+			},
+			endResources: test.Resources{
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Services:       []*corev1.Service{service1},
+			},
+		},
+		{
+			name: "eventlistener-label-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Services:       []*corev1.Service{service1},
+			},
+			endResources: test.Resources{
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Services:       []*corev1.Service{service2},
+			},
+		},
+		{
+			name: "service-label-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Services:       []*corev1.Service{service2},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Services:       []*corev1.Service{service1},
+			},
+		},
+		{
+			name: "service-nodeport-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Services:       []*corev1.Service{service3},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Services:       []*corev1.Service{service3},
+			},
+		},
+	}
+	for i := range tests {
+		t.Run(tests[i].name, func(t *testing.T) {
+			// Setup
+			testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
+			defer cancel()
 
-//// Run Reconcile
-//// FIXME: https://github.com/tektoncd/pipeline/blob/master/pkg/reconciler/pipelinerun/pipelinerun_test.go#L85
-//err := testAssets.Controller.Reconciler.Reconcile(context.Background(), reconcileKey)
-//if err != nil {
-//t.Errorf("eventlistener.Reconcile() returned error: %s", err)
-//return
-//}
-//// Grab test resource results
-//actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
-//if err != nil {
-//t.Fatal(err)
-//}
-//// Compare services
-//// Semantic equality since VolatileTime will not match using cmp.Diff
-//if diff := cmp.Diff(tests[i].endResources.Services, actualEndResources.Services, ignoreLastTransitionTime); diff != "" {
-//t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
-//}
+			// Run Reconcile
+			// FIXME: https://github.com/tektoncd/pipeline/blob/master/pkg/reconciler/pipelinerun/pipelinerun_test.go#L85
+			err := testAssets.Controller.Reconciler.Reconcile(context.Background(), reconcileKey)
+			if err != nil {
+				t.Errorf("eventlistener.Reconcile() returned error: %s", err)
+				return
+			}
+			// Grab test resource results
+			actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Compare services
+			// Semantic equality since VolatileTime will not match using cmp.Diff
+			if diff := cmp.Diff(tests[i].endResources.Services, actualEndResources.Services, ignoreFields); diff != "" {
+				t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
+			}
 
-//// Compare EventListener
-//// The updates to EventListener are not persisted within reconcileService
-//if diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0], ignoreLastTransitionTime); diff != "" {
-//t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
-//}
-//})
-//}
-/*}*/
+			// Compare EventListener
+			// The updates to EventListener are not persisted within reconcileService
+			if diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0], ignoreFields); diff != "" {
+				t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
+			}
+		})
+	}
+}
 
-/*func Test_reconcileDeployment(t *testing.T) {*/
-//eventListener1 := eventListener0.DeepCopy()
-//eventListener1.Status.SetExistsCondition(v1alpha1.DeploymentExists, nil)
-//eventListener1.Status.SetDeploymentConditions([]appsv1.DeploymentCondition{
-//deploymentAvailableCondition,
-//deploymentProgressingCondition,
-//})
+func Test_reconcileDeployment(t *testing.T) {
+	eventListener1 := eventListener0.DeepCopy()
+	eventListener1.Status.SetExistsCondition(v1alpha1.DeploymentExists, nil)
+	eventListener1.Status.SetDeploymentConditions([]appsv1.DeploymentCondition{
+		deploymentAvailableCondition,
+		deploymentProgressingCondition,
+	})
 
-//eventListener2 := eventListener1.DeepCopy()
-//eventListener2.Labels = updateLabel
+	eventListener2 := eventListener1.DeepCopy()
+	eventListener2.Labels = updateLabel
 
-//eventListener3 := eventListener1.DeepCopy()
-//eventListener3.Status.SetCondition(&apis.Condition{
-//Type: apis.ConditionType(appsv1.DeploymentReplicaFailure),
-//})
+	eventListener3 := eventListener1.DeepCopy()
+	eventListener3.Status.SetCondition(&apis.Condition{
+		Type: apis.ConditionType(appsv1.DeploymentReplicaFailure),
+	})
 
-//eventListener4 := eventListener1.DeepCopy()
-//eventListener4.Spec.ServiceAccountName = updatedSa
+	eventListener4 := eventListener1.DeepCopy()
+	eventListener4.Spec.ServiceAccountName = updatedSa
 
-//eventListener5 := eventListener1.DeepCopy()
-//eventListener5.Spec.PodTemplate.Tolerations = updateTolerations
+	eventListener5 := eventListener1.DeepCopy()
+	eventListener5.Spec.PodTemplate.Tolerations = updateTolerations
 
-// 	eventListener6 := eventListener1.DeepCopy()
-// 	eventListener6.Spec.PodTemplate.NodeSelector = updateNodeSelector
+	eventListener6 := eventListener1.DeepCopy()
+	eventListener6.Spec.PodTemplate.NodeSelector = updateNodeSelector
 
-// 	var replicas int32 = 1
-// 	// deployment1 == initial deployment
-// 	deployment1 := &appsv1.Deployment{
-// 		ObjectMeta: generateObjectMeta(eventListener0),
-// 		Spec: appsv1.DeploymentSpec{
-// 			Replicas: &replicas,
-// 			Selector: &metav1.LabelSelector{
-// 				MatchLabels: generatedLabels,
-// 			},
-// 			Template: corev1.PodTemplateSpec{
-// 				ObjectMeta: metav1.ObjectMeta{
-// 					Labels: generatedLabels,
-// 				},
-// 				Spec: corev1.PodSpec{
-// 					Tolerations:        eventListener0.Spec.PodTemplate.Tolerations,
-// 					ServiceAccountName: eventListener0.Spec.ServiceAccountName,
-// 					Containers: []corev1.Container{
-// 						{
-// 							Name:  "event-listener",
-// 							Image: *elImage,
-// 							Ports: []corev1.ContainerPort{
-// 								{
-// 									ContainerPort: int32(*ElPort),
-// 									Protocol:      corev1.ProtocolTCP,
-// 								},
-// 							},
-// 							LivenessProbe: &corev1.Probe{
-// 								Handler: corev1.Handler{
-// 									HTTPGet: &corev1.HTTPGetAction{
-// 										Path:   "/live",
-// 										Scheme: corev1.URISchemeHTTP,
-// 										Port:   intstr.FromInt((*ElPort)),
-// 									},
-// 								},
-// 								PeriodSeconds:    int32(*PeriodSeconds),
-// 								FailureThreshold: int32(*FailureThreshold),
-// 							},
-// 							ReadinessProbe: &corev1.Probe{
-// 								Handler: corev1.Handler{
-// 									HTTPGet: &corev1.HTTPGetAction{
-// 										Path:   "/live",
-// 										Scheme: corev1.URISchemeHTTP,
-// 										Port:   intstr.FromInt((*ElPort)),
-// 									},
-// 								},
-// 								PeriodSeconds:    int32(*PeriodSeconds),
-// 								FailureThreshold: int32(*FailureThreshold),
-// 							},
-// 							Args: []string{
-// 								"-el-name", eventListenerName,
-// 								"-el-namespace", namespace,
-// 								"-port", strconv.Itoa(*ElPort),
-// 							},
-// 							VolumeMounts: []corev1.VolumeMount{
-// 								{
-// 									Name:      "config-logging",
-// 									MountPath: "/etc/config-logging",
-// 								},
-// 							},
-// 							Env: []corev1.EnvVar{
-// 								{
-// 									Name: "SYSTEM_NAMESPACE",
-// 									ValueFrom: &corev1.EnvVarSource{
-// 										FieldRef: &corev1.ObjectFieldSelector{
-// 											FieldPath: "metadata.namespace",
-// 										},
-// 									},
-// 								},
-// 							},
-// 						},
-// 					},
-// 					Volumes: []corev1.Volume{
-// 						{
-// 							Name: "config-logging",
-// 							VolumeSource: corev1.VolumeSource{
-// 								ConfigMap: &corev1.ConfigMapVolumeSource{
-// 									LocalObjectReference: corev1.LocalObjectReference{
-// 										Name: eventListenerConfigMapName,
-// 									},
-// 								},
-// 							},
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 		Status: appsv1.DeploymentStatus{
-// 			Conditions: []appsv1.DeploymentCondition{
-// 				deploymentAvailableCondition,
-// 				deploymentProgressingCondition,
-// 			},
-// 		},
-// 	}
+	var replicas int32 = 1
+	// deployment1 == initial deployment
+	deployment1 := &appsv1.Deployment{
+		ObjectMeta: generateObjectMeta(eventListener0),
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: generatedLabels,
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: generatedLabels,
+				},
+				Spec: corev1.PodSpec{
+					Tolerations:        eventListener0.Spec.PodTemplate.Tolerations,
+					ServiceAccountName: eventListener0.Spec.ServiceAccountName,
+					Containers: []corev1.Container{
+						{
+							Name:  "event-listener",
+							Image: *elImage,
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: int32(*ElPort),
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							LivenessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/live",
+										Scheme: corev1.URISchemeHTTP,
+										Port:   intstr.FromInt((*ElPort)),
+									},
+								},
+								PeriodSeconds:    int32(*PeriodSeconds),
+								FailureThreshold: int32(*FailureThreshold),
+							},
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									HTTPGet: &corev1.HTTPGetAction{
+										Path:   "/live",
+										Scheme: corev1.URISchemeHTTP,
+										Port:   intstr.FromInt((*ElPort)),
+									},
+								},
+								PeriodSeconds:    int32(*PeriodSeconds),
+								FailureThreshold: int32(*FailureThreshold),
+							},
+							Args: []string{
+								"-el-name", eventListenerName,
+								"-el-namespace", namespace,
+								"-port", strconv.Itoa(*ElPort),
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "config-logging",
+									MountPath: "/etc/config-logging",
+								},
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "SYSTEM_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+						},
+					},
+					Volumes: []corev1.Volume{
+						{
+							Name: "config-logging",
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: eventListenerConfigMapName,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Status: appsv1.DeploymentStatus{
+			Conditions: []appsv1.DeploymentCondition{
+				deploymentAvailableCondition,
+				deploymentProgressingCondition,
+			},
+		},
+	}
 
-// //// deployment 2 == initial deployment + labels from eventListener
-// //deployment2 := deployment1.DeepCopy()
-// //deployment2.Labels = mergeLabels(generatedLabels, updateLabel)
-// //deployment2.Spec.Selector.MatchLabels = generatedLabels
-// //deployment2.Spec.Template.Labels = mergeLabels(generatedLabels, updateLabel)
+	// deployment 2 == initial deployment + labels from eventListener
+	deployment2 := deployment1.DeepCopy()
+	deployment2.Labels = mergeLabels(generatedLabels, updateLabel)
+	deployment2.Spec.Selector.MatchLabels = generatedLabels
+	deployment2.Spec.Template.Labels = mergeLabels(generatedLabels, updateLabel)
 
-// //// deployment 3 == initial deployment + updated replicas
-// //deployment3 := deployment1.DeepCopy()
-// //var updateReplicas int32 = 5
-// //deployment3.Spec.Replicas = &updateReplicas
+	// deployment 3 == initial deployment + updated replicas
+	deployment3 := deployment1.DeepCopy()
+	var updateReplicas int32 = 5
+	deployment3.Spec.Replicas = &updateReplicas
 
-// //deployment4 := deployment1.DeepCopy()
-// //deployment4.Spec.Template.Spec.ServiceAccountName = updatedSa
+	deployment4 := deployment1.DeepCopy()
+	deployment4.Spec.Template.Spec.ServiceAccountName = updatedSa
 
-// //deployment5 := deployment1.DeepCopy()
-// //deployment5.Spec.Template.Spec.Tolerations = updateTolerations
+	deployment5 := deployment1.DeepCopy()
+	deployment5.Spec.Template.Spec.Tolerations = updateTolerations
 
-// 	deployment6 := deployment1.DeepCopy()
-// 	deployment6.Spec.Template.Spec.NodeSelector = updateNodeSelector
+	deployment6 := deployment1.DeepCopy()
+	deployment6.Spec.Template.Spec.NodeSelector = updateNodeSelector
 
-// 	deploymentMissingVolumes := deployment1.DeepCopy()
-// 	deploymentMissingVolumes.Spec.Template.Spec.Volumes = nil
-// 	deploymentMissingVolumes.Spec.Template.Spec.Containers[0].VolumeMounts = nil
+	deploymentMissingVolumes := deployment1.DeepCopy()
+	deploymentMissingVolumes.Spec.Template.Spec.Volumes = nil
+	deploymentMissingVolumes.Spec.Template.Spec.Containers[0].VolumeMounts = nil
 
-// 	tests := []struct {
-// 		name           string
-// 		startResources test.Resources
-// 		endResources   test.Resources
-// 	}{
-// 		{
-// 			name: "create-deployment",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener0},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-label-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener2},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener2},
-// 				Deployments:    []*appsv1.Deployment{deployment2},
-// 			},
-// 		},
-// 		{
-// 			name: "deployment-label-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment2},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 		},
-// 		{
-// 			name: "deployment-replica-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment3},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment3},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-replica-failure-status-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener3},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener1},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-serviceaccount-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener4},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener4},
-// 				Deployments:    []*appsv1.Deployment{deployment4},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-tolerations-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener5},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener5},
-// 				Deployments:    []*appsv1.Deployment{deployment5},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-nodeSelector-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener6},
-// 				Deployments:    []*appsv1.Deployment{deployment1},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener6},
-// 				Deployments:    []*appsv1.Deployment{deployment6},
-// 			},
-// 		},
-// 		{
-// 			name: "eventlistener-config-volume-mount-update",
-// 			startResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener2},
-// 				Deployments:    []*appsv1.Deployment{deploymentMissingVolumes},
-// 			},
-// 			endResources: test.Resources{
-// 				Namespaces:     []*corev1.Namespace{namespaceResource},
-// 				EventListeners: []*v1alpha1.EventListener{eventListener2},
-// 				Deployments:    []*appsv1.Deployment{deployment2},
-// 			},
-// 		},
-// 	}
-// 	for i := range tests {
-// 		t.Run(tests[i].name, func(t *testing.T) {
-// 			// Setup
-// 			testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
-// 			defer cancel()
+	tests := []struct {
+		name           string
+		startResources test.Resources
+		endResources   test.Resources
+	}{
+		{
+			name: "create-deployment",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener0},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+		},
+		{
+			name: "eventlistener-label-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Deployments:    []*appsv1.Deployment{deployment2},
+			},
+		},
+		{
+			name: "deployment-label-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment2},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+		},
+		{
+			name: "deployment-replica-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment3},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment3},
+			},
+		},
+		{
+			name: "eventlistener-replica-failure-status-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener3},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+		},
+		{
+			name: "eventlistener-serviceaccount-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener4},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener4},
+				Deployments:    []*appsv1.Deployment{deployment4},
+			},
+		},
+		{
+			name: "eventlistener-tolerations-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener5},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener5},
+				Deployments:    []*appsv1.Deployment{deployment5},
+			},
+		},
+		{
+			name: "eventlistener-nodeSelector-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener6},
+				Deployments:    []*appsv1.Deployment{deployment1},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener6},
+				Deployments:    []*appsv1.Deployment{deployment6},
+			},
+		},
+		{
+			name: "eventlistener-config-volume-mount-update",
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Deployments:    []*appsv1.Deployment{deploymentMissingVolumes},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener2},
+				Deployments:    []*appsv1.Deployment{deployment2},
+			},
+		},
+	}
+	for i := range tests {
+		t.Run(tests[i].name, func(t *testing.T) {
+			// Setup
+			testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
+			defer cancel()
 
-//// Run Reconcile
-//err := testAssets.Controller.Reconciler.(*Reconciler).reconcileDeployment(tests[i].startResources.EventListeners[0])
-//if err != nil {
-//t.Errorf("eventlistener.Reconcile() returned error: %s", err)
-//return
-//}
-//// Grab test resource results
-//actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
-//if err != nil {
-//t.Fatal(err)
-//}
-//// Compare Deployments
-//// Semantic equality since VolatileTime will not match using cmp.Diff
-//if !equality.Semantic.DeepEqual(tests[i].endResources.Deployments, actualEndResources.Deployments) {
-//t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
-//diff := cmp.Diff(tests[i].endResources.Deployments, actualEndResources.Deployments)
-//t.Errorf("Diff request body: -want +got: %s", diff)
-//}
-//// Compare EventListener
-//// The updates to EventListener are not persisted within reconcileService
-//if !equality.Semantic.DeepEqual(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0]) {
-//t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
-//diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0])
-//t.Errorf("Diff request body: -want +got: %s", diff)
-//}
-//})
-//}
-/*}*/
+			// Run Reconcile
+			err := testAssets.Controller.Reconciler.Reconcile(context.Background(), reconcileKey)
+			if err != nil {
+				t.Errorf("eventlistener.Reconcile() returned error: %s", err)
+				return
+			}
+			// Grab test resource results
+			actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Compare Deployments
+			// Semantic equality since VolatileTime will not match using cmp.Diff
+			if !equality.Semantic.DeepEqual(tests[i].endResources.Deployments, actualEndResources.Deployments) {
+				t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
+				diff := cmp.Diff(tests[i].endResources.Deployments, actualEndResources.Deployments)
+				t.Errorf("Diff request body: -want +got: %s", diff)
+			}
+			// Compare EventListener
+			// The updates to EventListener are not persisted within reconcileService
+			if !equality.Semantic.DeepEqual(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0]) {
+				t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
+				diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0])
+				t.Errorf("Diff request body: -want +got: %s", diff)
+			}
+		})
+	}
+}
 
 func TestReconcile(t *testing.T) {
 	os.Setenv("SYSTEM_NAMESPACE", "tekton-pipelines")
@@ -846,22 +857,27 @@ func TestReconcile(t *testing.T) {
 			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
 		},
 	}, {
-		name:           "delete-eventlistener",
-		key:            reconcileKey,
-		startResources: test.Resources{},
-		endResources:   test.Resources{},
-	}, {
-		name: "delete-last-eventlistener",
+		name: "delete-eventlistener",
 		key:  reconcileKey,
 		startResources: test.Resources{
 			Namespaces: []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{makeEL(func(el *v1alpha1.EventListener) {
+				// Might also have to set a finalizer manually
+				now := metav1.NewTime(time.Now())
+				el.DeletionTimestamp = &now
+			})},
 			ConfigMaps: []*corev1.ConfigMap{loggingConfigMap},
 		},
 		endResources: test.Resources{
 			Namespaces: []*corev1.Namespace{namespaceResource},
 		},
 	}, {
-		name: "delete-last-eventlistener-in-our-namespace",
+		name:           "delete-last-eventlistener", // FIXME: This tests that the logging configMap gets deleted
+		key:            reconcileKey,
+		startResources: test.Resources{},
+		endResources:   test.Resources{},
+	}, {
+		name: "delete-last-eventlistener-in-our-namespace", // TODO: Move to finalizer test
 		key:  fmt.Sprintf("%s/%s", reconcilerNamespace, eventListenerName),
 		startResources: test.Resources{
 			Namespaces: []*corev1.Namespace{reconcilerNamespaceResource},
@@ -872,7 +888,7 @@ func TestReconcile(t *testing.T) {
 			ConfigMaps: []*corev1.ConfigMap{reconcilerLoggingConfigMap},
 		},
 	}, {
-		name: "delete-eventlistener-with-remaining-eventlistener",
+		name: "delete-eventlistener-with-remaining-eventlistener", // TODO: Move to finalizer tests
 		key:  reconcileKey,
 		startResources: test.Resources{
 			Namespaces:     []*corev1.Namespace{namespaceResource},
@@ -904,7 +920,7 @@ func TestReconcile(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if diff := cmp.Diff(tt.endResources, *actualEndResources, ignoreLastTransitionTime); diff != "" {
+			if diff := cmp.Diff(tt.endResources, *actualEndResources, ignoreFields); diff != "" {
 				t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
 			}
 		})
