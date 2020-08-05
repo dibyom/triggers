@@ -201,7 +201,7 @@ func (c *Reconciler) reconcileService(logger *zap.SugaredLogger, el *v1alpha1.Ev
 				},
 			},
 		},
-}
+	}
 	existingService, err := c.KubeClientSet.CoreV1().Services(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName, metav1.GetOptions{})
 	switch {
 	case err == nil:

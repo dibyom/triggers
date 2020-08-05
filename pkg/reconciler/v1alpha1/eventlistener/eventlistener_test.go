@@ -39,7 +39,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/rand"
 	k8stest "k8s.io/client-go/testing"
 	"knative.dev/pkg/apis"
-	duckv1alpha1 "knative.dev/pkg/apis/duck/v1alpha1"
 	fakekubeclient "knative.dev/pkg/client/injection/kube/client/fake"
 	"knative.dev/pkg/configmap"
 	rtesting "knative.dev/pkg/reconciler/testing"
@@ -109,14 +108,6 @@ var (
 	generatedLabels = GenerateResourceLabels(eventListenerName)
 )
 
-// makeEL is a helper to build an EventListener for tests.
-// It generates a base EventListener that can then be modified by the passed in op function
-func makeEL(op func(el *v1alpha1.EventListener)) *v1alpha1.EventListener {
-	e := eventListener0.DeepCopy()
-	op(e)
-	return e
-}
-
 // getEventListenerTestAssets returns TestAssets that have been seeded with the
 // given test.Resources r where r represents the state of the system
 func getEventListenerTestAssets(t *testing.T, r test.Resources) (test.Assets, context.CancelFunc) {
@@ -145,130 +136,6 @@ func getEventListenerTestAssets(t *testing.T, r test.Resources) (test.Assets, co
 		Controller: NewController(ctx, cmw),
 		Clients:    clients,
 	}, cancel
-}
-
-func Test_reconcileService(t *testing.T) {
-	eventListener1 := eventListener0.DeepCopy()
-	eventListener1.Status.SetExistsCondition(v1alpha1.ServiceExists, nil)
-	eventListener1.Status.Address = &duckv1alpha1.Addressable{}
-	eventListener1.Status.Address.URL = &apis.URL{
-		Scheme: "http",
-		Host:   listenerHostname(generatedResourceName, namespace, *ElPort),
-	}
-
-	eventListener2 := eventListener1.DeepCopy()
-	eventListener2.Labels = updateLabel
-
-	service1 := &corev1.Service{
-		ObjectMeta: generateObjectMeta(eventListener0),
-		Spec: corev1.ServiceSpec{
-			Selector: generatedLabels,
-			Type:     eventListener1.Spec.ServiceType,
-			Ports: []corev1.ServicePort{
-				{
-					Name:     eventListenerServicePortName,
-					Protocol: corev1.ProtocolTCP,
-					Port:     int32(*ElPort),
-					TargetPort: intstr.IntOrString{
-						IntVal: int32(*ElPort),
-					},
-				},
-			},
-		},
-	}
-	service2 := service1.DeepCopy()
-	service2.Labels = mergeLabels(generatedLabels, updateLabel)
-	service2.Spec.Selector = generatedLabels
-
-	service3 := service1.DeepCopy()
-	service3.Spec.Ports[0].NodePort = 30000
-
-	tests := []struct {
-		name           string
-		startResources test.Resources
-		endResources   test.Resources
-	}{
-		{
-			name: "create-service",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener0},
-			},
-			endResources: test.Resources{
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Services:       []*corev1.Service{service1},
-			},
-		},
-		{
-			name: "eventlistener-label-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Services:       []*corev1.Service{service1},
-			},
-			endResources: test.Resources{
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Services:       []*corev1.Service{service2},
-			},
-		},
-		{
-			name: "service-label-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Services:       []*corev1.Service{service2},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Services:       []*corev1.Service{service1},
-			},
-		},
-		{
-			name: "service-nodeport-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Services:       []*corev1.Service{service3},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Services:       []*corev1.Service{service3},
-			},
-		},
-	}
-	for i := range tests {
-		t.Run(tests[i].name, func(t *testing.T) {
-			// Setup
-			testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
-			defer cancel()
-
-			// Run Reconcile
-			// FIXME: https://github.com/tektoncd/pipeline/blob/master/pkg/reconciler/pipelinerun/pipelinerun_test.go#L85
-			err := testAssets.Controller.Reconciler.Reconcile(context.Background(), reconcileKey)
-			if err != nil {
-				t.Errorf("eventlistener.Reconcile() returned error: %s", err)
-				return
-			}
-			// Grab test resource results
-			actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Compare services
-			// Semantic equality since VolatileTime will not match using cmp.Diff
-			if diff := cmp.Diff(tests[i].endResources.Services, actualEndResources.Services, ignoreFields); diff != "" {
-				t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
-			}
-
-			// Compare EventListener
-			// The updates to EventListener are not persisted within reconcileService
-			if diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0], ignoreFields); diff != "" {
-				t.Errorf("eventlistener.Reconcile() equality mismatch. Diff request body: -want +got: %s", diff)
-			}
-		})
-	}
 }
 
 func Test_reconcileDeployment(t *testing.T) {
@@ -571,6 +438,16 @@ func Test_reconcileDeployment(t *testing.T) {
 	}
 }
 
+// makeEL is a helper to build an EventListener for tests.
+// It generates a base EventListener that can then be modified by the passed in op function
+func makeEL(ops ...func(el *v1alpha1.EventListener)) *v1alpha1.EventListener {
+	e := eventListener0.DeepCopy()
+	for _, op := range ops {
+		op(e)
+	}
+	return e
+}
+
 func TestReconcile(t *testing.T) {
 	os.Setenv("SYSTEM_NAMESPACE", "tekton-pipelines")
 	eventListener1 := bldr.EventListener(eventListenerName, namespace,
@@ -748,6 +625,9 @@ func TestReconcile(t *testing.T) {
 	service3 := service2.DeepCopy()
 	service3.Spec.Type = corev1.ServiceTypeNodePort
 
+	service4 := service3.DeepCopy()
+	service4.Spec.Ports[0].NodePort = 30000
+
 	loggingConfigMap := defaultLoggingConfigMap()
 	loggingConfigMap.ObjectMeta.Namespace = namespace
 	reconcilerLoggingConfigMap := defaultLoggingConfigMap()
@@ -857,52 +737,86 @@ func TestReconcile(t *testing.T) {
 			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
 		},
 	}, {
-		name: "delete-eventlistener",
-		key:  reconcileKey,
-		startResources: test.Resources{
-			Namespaces: []*corev1.Namespace{namespaceResource},
-			EventListeners: []*v1alpha1.EventListener{makeEL(func(el *v1alpha1.EventListener) {
-				// Might also have to set a finalizer manually
-				now := metav1.NewTime(time.Now())
-				el.DeletionTimestamp = &now
-			})},
-			ConfigMaps: []*corev1.ConfigMap{loggingConfigMap},
-		},
-		endResources: test.Resources{
-			Namespaces: []*corev1.Namespace{namespaceResource},
-		},
-	}, {
-		name:           "delete-last-eventlistener", // FIXME: This tests that the logging configMap gets deleted
-		key:            reconcileKey,
-		startResources: test.Resources{},
-		endResources:   test.Resources{},
-	}, {
-		name: "delete-last-eventlistener-in-our-namespace", // TODO: Move to finalizer test
-		key:  fmt.Sprintf("%s/%s", reconcilerNamespace, eventListenerName),
-		startResources: test.Resources{
-			Namespaces: []*corev1.Namespace{reconcilerNamespaceResource},
-			ConfigMaps: []*corev1.ConfigMap{reconcilerLoggingConfigMap},
-		},
-		endResources: test.Resources{
-			Namespaces: []*corev1.Namespace{reconcilerNamespaceResource},
-			ConfigMaps: []*corev1.ConfigMap{reconcilerLoggingConfigMap},
-		},
-	}, {
-		name: "delete-eventlistener-with-remaining-eventlistener", // TODO: Move to finalizer tests
+		// Check that if a user manually updates the labels for a service, we revert the change.
+		// TODO: why did we do this?
+		name: "update-el-serivice-labels",
 		key:  reconcileKey,
 		startResources: test.Resources{
 			Namespaces:     []*corev1.Namespace{namespaceResource},
 			EventListeners: []*v1alpha1.EventListener{eventListener1},
-			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
-		},
-		endResources: test.Resources{
-			Namespaces:     []*corev1.Namespace{namespaceResource},
-			EventListeners: []*v1alpha1.EventListener{eventListener1},
-			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+			Services:       []*corev1.Service{service2},
 			Deployments:    []*appsv1.Deployment{deployment1},
-			Services:       []*corev1.Service{service1},
+		},
+		endResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Services:       []*corev1.Service{service1}, // We expect the service to drop the user added labels
+			Deployments:    []*appsv1.Deployment{deployment1},
+			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+		},
+	}, {
+		// Checks that EL reconciler does not overwrite NodePort set by k8s (see #167)
+		// TODO: why does this not fail...i.e. why do we not see a deployment in the end resources?
+		name: "service-nodeport-update",
+		key:  reconcileKey,
+		startResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Services:       []*corev1.Service{service4},
+		},
+		endResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Services:       []*corev1.Service{service4},
 		},
 	},
+		{
+			name: "delete-eventlistener", // FIXME: Finalizer not called?
+			key:  reconcileKey,
+			startResources: test.Resources{
+				Namespaces: []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{makeEL(func(el *v1alpha1.EventListener) {
+					// Might also have to set a finalizer manually
+					now := metav1.NewTime(time.Now())
+					el.DeletionTimestamp = &now
+				})},
+				ConfigMaps: []*corev1.ConfigMap{loggingConfigMap},
+			},
+			endResources: test.Resources{
+				Namespaces: []*corev1.Namespace{namespaceResource},
+			},
+		}, {
+			name:           "delete-last-eventlistener", // FIXME: This tests that the logging configMap gets deleted
+			key:            reconcileKey,
+			startResources: test.Resources{},
+			endResources:   test.Resources{},
+		}, {
+			name: "delete-last-eventlistener-in-our-namespace", // TODO: Move to finalizer test
+			key:  fmt.Sprintf("%s/%s", reconcilerNamespace, eventListenerName),
+			startResources: test.Resources{
+				Namespaces: []*corev1.Namespace{reconcilerNamespaceResource},
+				ConfigMaps: []*corev1.ConfigMap{reconcilerLoggingConfigMap},
+			},
+			endResources: test.Resources{
+				Namespaces: []*corev1.Namespace{reconcilerNamespaceResource},
+				ConfigMaps: []*corev1.ConfigMap{reconcilerLoggingConfigMap},
+			},
+		}, {
+			name: "delete-eventlistener-with-remaining-eventlistener", // TODO: Move to finalizer tests
+			key:  reconcileKey,
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+				Deployments:    []*appsv1.Deployment{deployment1},
+				Services:       []*corev1.Service{service1},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
