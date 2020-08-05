@@ -4,3 +4,19 @@
   - Move all testConfigMap tests over to this one
 
 Reconciler Tests
+
+Merge reconcileService and reconcileDeployment tests
+Create helper methods for the test
+
+Deployment tests
+  -> create-deployment: should be covered
+  -> el-label-update
+  -> deployment-label-update
+  -> deployment-replica-update:
+  -> el-replica-failure-status-update:
+  -> el-service-account update:
+  -> el-tolerations-update:
+  -> el-nodeSelector-update:
+  -> el-config-volume-mount-update:
+
+
