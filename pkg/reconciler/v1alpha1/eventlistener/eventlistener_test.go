@@ -22,7 +22,6 @@ import (
 	"os"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -32,7 +31,6 @@ import (
 	bldr "github.com/tektoncd/triggers/test/builder"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -64,7 +62,10 @@ func init() {
 
 var (
 	generatedResourceName string
-	ignoreFields          = cmpopts.IgnoreTypes(apis.Condition{}.LastTransitionTime.Inner.Time, metav1.ObjectMeta{}.Finalizers)
+	ignoreFields          = cmpopts.IgnoreTypes(
+		apis.Condition{}.LastTransitionTime.Inner.Time,
+		metav1.ObjectMeta{}.Finalizers, // FIX: Initial EL, WithFinalizerSet
+	)
 
 	// 0 indicates pre-reconciliation
 	eventListener0      *v1alpha1.EventListener
@@ -138,316 +139,6 @@ func getEventListenerTestAssets(t *testing.T, r test.Resources) (test.Assets, co
 	}, cancel
 }
 
-func Test_reconcileDeployment(t *testing.T) {
-	eventListener1 := eventListener0.DeepCopy()
-	eventListener1.Status.SetExistsCondition(v1alpha1.DeploymentExists, nil)
-	eventListener1.Status.SetDeploymentConditions([]appsv1.DeploymentCondition{
-		deploymentAvailableCondition,
-		deploymentProgressingCondition,
-	})
-
-	eventListener2 := eventListener1.DeepCopy()
-	eventListener2.Labels = updateLabel
-
-	eventListener3 := eventListener1.DeepCopy()
-	eventListener3.Status.SetCondition(&apis.Condition{
-		Type: apis.ConditionType(appsv1.DeploymentReplicaFailure),
-	})
-
-	eventListener4 := eventListener1.DeepCopy()
-	eventListener4.Spec.ServiceAccountName = updatedSa
-
-	eventListener5 := eventListener1.DeepCopy()
-	eventListener5.Spec.PodTemplate.Tolerations = updateTolerations
-
-	eventListener6 := eventListener1.DeepCopy()
-	eventListener6.Spec.PodTemplate.NodeSelector = updateNodeSelector
-
-	var replicas int32 = 1
-	// deployment1 == initial deployment
-	deployment1 := &appsv1.Deployment{
-		ObjectMeta: generateObjectMeta(eventListener0),
-		Spec: appsv1.DeploymentSpec{
-			Replicas: &replicas,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: generatedLabels,
-			},
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: generatedLabels,
-				},
-				Spec: corev1.PodSpec{
-					Tolerations:        eventListener0.Spec.PodTemplate.Tolerations,
-					ServiceAccountName: eventListener0.Spec.ServiceAccountName,
-					Containers: []corev1.Container{
-						{
-							Name:  "event-listener",
-							Image: *elImage,
-							Ports: []corev1.ContainerPort{
-								{
-									ContainerPort: int32(*ElPort),
-									Protocol:      corev1.ProtocolTCP,
-								},
-							},
-							LivenessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/live",
-										Scheme: corev1.URISchemeHTTP,
-										Port:   intstr.FromInt((*ElPort)),
-									},
-								},
-								PeriodSeconds:    int32(*PeriodSeconds),
-								FailureThreshold: int32(*FailureThreshold),
-							},
-							ReadinessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
-									HTTPGet: &corev1.HTTPGetAction{
-										Path:   "/live",
-										Scheme: corev1.URISchemeHTTP,
-										Port:   intstr.FromInt((*ElPort)),
-									},
-								},
-								PeriodSeconds:    int32(*PeriodSeconds),
-								FailureThreshold: int32(*FailureThreshold),
-							},
-							Args: []string{
-								"-el-name", eventListenerName,
-								"-el-namespace", namespace,
-								"-port", strconv.Itoa(*ElPort),
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								{
-									Name:      "config-logging",
-									MountPath: "/etc/config-logging",
-								},
-							},
-							Env: []corev1.EnvVar{
-								{
-									Name: "SYSTEM_NAMESPACE",
-									ValueFrom: &corev1.EnvVarSource{
-										FieldRef: &corev1.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-						},
-					},
-					Volumes: []corev1.Volume{
-						{
-							Name: "config-logging",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: eventListenerConfigMapName,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-		Status: appsv1.DeploymentStatus{
-			Conditions: []appsv1.DeploymentCondition{
-				deploymentAvailableCondition,
-				deploymentProgressingCondition,
-			},
-		},
-	}
-
-	// deployment 2 == initial deployment + labels from eventListener
-	deployment2 := deployment1.DeepCopy()
-	deployment2.Labels = mergeLabels(generatedLabels, updateLabel)
-	deployment2.Spec.Selector.MatchLabels = generatedLabels
-	deployment2.Spec.Template.Labels = mergeLabels(generatedLabels, updateLabel)
-
-	// deployment 3 == initial deployment + updated replicas
-	deployment3 := deployment1.DeepCopy()
-	var updateReplicas int32 = 5
-	deployment3.Spec.Replicas = &updateReplicas
-
-	deployment4 := deployment1.DeepCopy()
-	deployment4.Spec.Template.Spec.ServiceAccountName = updatedSa
-
-	deployment5 := deployment1.DeepCopy()
-	deployment5.Spec.Template.Spec.Tolerations = updateTolerations
-
-	deployment6 := deployment1.DeepCopy()
-	deployment6.Spec.Template.Spec.NodeSelector = updateNodeSelector
-
-	deploymentMissingVolumes := deployment1.DeepCopy()
-	deploymentMissingVolumes.Spec.Template.Spec.Volumes = nil
-	deploymentMissingVolumes.Spec.Template.Spec.Containers[0].VolumeMounts = nil
-
-	tests := []struct {
-		name           string
-		startResources test.Resources
-		endResources   test.Resources
-	}{
-		{
-			name: "create-deployment",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener0},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-		},
-		{
-			name: "eventlistener-label-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Deployments:    []*appsv1.Deployment{deployment2},
-			},
-		},
-		{
-			name: "deployment-label-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment2},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-		},
-		{
-			name: "deployment-replica-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment3},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment3},
-			},
-		},
-		{
-			name: "eventlistener-replica-failure-status-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener3},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener1},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-		},
-		{
-			name: "eventlistener-serviceaccount-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener4},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener4},
-				Deployments:    []*appsv1.Deployment{deployment4},
-			},
-		},
-		{
-			name: "eventlistener-tolerations-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener5},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener5},
-				Deployments:    []*appsv1.Deployment{deployment5},
-			},
-		},
-		{
-			name: "eventlistener-nodeSelector-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener6},
-				Deployments:    []*appsv1.Deployment{deployment1},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener6},
-				Deployments:    []*appsv1.Deployment{deployment6},
-			},
-		},
-		{
-			name: "eventlistener-config-volume-mount-update",
-			startResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Deployments:    []*appsv1.Deployment{deploymentMissingVolumes},
-			},
-			endResources: test.Resources{
-				Namespaces:     []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{eventListener2},
-				Deployments:    []*appsv1.Deployment{deployment2},
-			},
-		},
-	}
-	for i := range tests {
-		t.Run(tests[i].name, func(t *testing.T) {
-			// Setup
-			testAssets, cancel := getEventListenerTestAssets(t, tests[i].startResources)
-			defer cancel()
-
-			// Run Reconcile
-			err := testAssets.Controller.Reconciler.Reconcile(context.Background(), reconcileKey)
-			if err != nil {
-				t.Errorf("eventlistener.Reconcile() returned error: %s", err)
-				return
-			}
-			// Grab test resource results
-			actualEndResources, err := test.GetResourcesFromClients(testAssets.Clients)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// Compare Deployments
-			// Semantic equality since VolatileTime will not match using cmp.Diff
-			if !equality.Semantic.DeepEqual(tests[i].endResources.Deployments, actualEndResources.Deployments) {
-				t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
-				diff := cmp.Diff(tests[i].endResources.Deployments, actualEndResources.Deployments)
-				t.Errorf("Diff request body: -want +got: %s", diff)
-			}
-			// Compare EventListener
-			// The updates to EventListener are not persisted within reconcileService
-			if !equality.Semantic.DeepEqual(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0]) {
-				t.Error("eventlistener.Reconcile() equality mismatch. Ignore semantic time mismatch")
-				diff := cmp.Diff(tests[i].endResources.EventListeners[0], tests[i].startResources.EventListeners[0])
-				t.Errorf("Diff request body: -want +got: %s", diff)
-			}
-		})
-	}
-}
-
-// makeEL is a helper to build an EventListener for tests.
-// It generates a base EventListener that can then be modified by the passed in op function
-func makeEL(ops ...func(el *v1alpha1.EventListener)) *v1alpha1.EventListener {
-	e := eventListener0.DeepCopy()
-	for _, op := range ops {
-		op(e)
-	}
-	return e
-}
-
 func TestReconcile(t *testing.T) {
 	os.Setenv("SYSTEM_NAMESPACE", "tekton-pipelines")
 	eventListener1 := bldr.EventListener(eventListenerName, namespace,
@@ -501,6 +192,11 @@ func TestReconcile(t *testing.T) {
 
 	eventListener6 := eventListener2.DeepCopy()
 	eventListener6.Spec.PodTemplate.NodeSelector = updateNodeSelector
+
+	elWithDeploymentReplicaFailure := eventListener1.DeepCopy()
+	elWithDeploymentReplicaFailure.Status.SetCondition(&apis.Condition{
+		Type: apis.ConditionType(appsv1.DeploymentReplicaFailure),
+	})
 
 	var replicas int32 = 1
 	deployment1 := &appsv1.Deployment{
@@ -600,6 +296,15 @@ func TestReconcile(t *testing.T) {
 	deployment5 := deployment2.DeepCopy()
 	deployment5.Spec.Template.Spec.NodeSelector = updateNodeSelector
 
+	// deployment 3 == initial deployment + updated replicas
+	deploymentWithUpdatedReplicas := deployment1.DeepCopy()
+	var updateReplicas int32 = 5
+	deploymentWithUpdatedReplicas.Spec.Replicas = &updateReplicas
+
+	deploymentMissingVolumes := deployment1.DeepCopy()
+	deploymentMissingVolumes.Spec.Template.Spec.Volumes = nil
+	deploymentMissingVolumes.Spec.Template.Spec.Containers[0].VolumeMounts = nil
+
 	service1 := &corev1.Service{
 		ObjectMeta: generateObjectMeta(eventListener0),
 		Spec: corev1.ServiceSpec{
@@ -625,7 +330,8 @@ func TestReconcile(t *testing.T) {
 	service3 := service2.DeepCopy()
 	service3.Spec.Type = corev1.ServiceTypeNodePort
 
-	service4 := service3.DeepCopy()
+	service4 := service1.DeepCopy()
+	service3.Spec.Type = corev1.ServiceTypeNodePort
 	service4.Spec.Ports[0].NodePort = 30000
 
 	loggingConfigMap := defaultLoggingConfigMap()
@@ -756,35 +462,91 @@ func TestReconcile(t *testing.T) {
 		},
 	}, {
 		// Checks that EL reconciler does not overwrite NodePort set by k8s (see #167)
-		// TODO: why does this not fail...i.e. why do we not see a deployment in the end resources?
 		name: "service-nodeport-update",
 		key:  reconcileKey,
 		startResources: test.Resources{
 			Namespaces:     []*corev1.Namespace{namespaceResource},
 			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deployment1},
 			Services:       []*corev1.Service{service4},
 		},
 		endResources: test.Resources{
 			Namespaces:     []*corev1.Namespace{namespaceResource},
 			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deployment1},
 			Services:       []*corev1.Service{service4},
+			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+		},
+	}, {
+		name: "deployment-label-update",
+		key:  reconcileKey,
+		startResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deployment2},
+			Services:       []*corev1.Service{service1},
+		},
+		endResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deployment1},
+			Services:       []*corev1.Service{service1},
+			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+		},
+	}, {
+		name: "deployment-replica-update",
+		key:  reconcileKey,
+		startResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deploymentWithUpdatedReplicas},
+			Services:       []*corev1.Service{service1},
+		},
+		endResources: test.Resources{
+			Namespaces:     []*corev1.Namespace{namespaceResource},
+			EventListeners: []*v1alpha1.EventListener{eventListener1},
+			Deployments:    []*appsv1.Deployment{deploymentWithUpdatedReplicas},
+			Services:       []*corev1.Service{service1},
+			ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
 		},
 	},
 		{
-			name: "delete-eventlistener", // FIXME: Finalizer not called?
+			name: "eventlistener-replica-failure-status-update",
 			key:  reconcileKey,
 			startResources: test.Resources{
-				Namespaces: []*corev1.Namespace{namespaceResource},
-				EventListeners: []*v1alpha1.EventListener{makeEL(func(el *v1alpha1.EventListener) {
-					// Might also have to set a finalizer manually
-					now := metav1.NewTime(time.Now())
-					el.DeletionTimestamp = &now
-				})},
-				ConfigMaps: []*corev1.ConfigMap{loggingConfigMap},
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{elWithDeploymentReplicaFailure},
+				Services:       []*corev1.Service{service1},
+				Deployments:    []*appsv1.Deployment{deployment1},
 			},
 			endResources: test.Resources{
-				Namespaces: []*corev1.Namespace{namespaceResource},
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment1},
+				Services:       []*corev1.Service{service1},
+				ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
 			},
+		},
+		{
+			name: "eventlistener-config-volume-mount-update",
+			key:  reconcileKey,
+			startResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deploymentMissingVolumes},
+			},
+			endResources: test.Resources{
+				Namespaces:     []*corev1.Namespace{namespaceResource},
+				EventListeners: []*v1alpha1.EventListener{eventListener1},
+				Deployments:    []*appsv1.Deployment{deployment1},
+				Services:       []*corev1.Service{service1},
+				ConfigMaps:     []*corev1.ConfigMap{loggingConfigMap},
+			},
+		}, {
+			name:           "delete-eventlistener",
+			key:            reconcileKey,
+			startResources: test.Resources{},
+			endResources:   test.Resources{},
 		}, {
 			name:           "delete-last-eventlistener", // FIXME: This tests that the logging configMap gets deleted
 			key:            reconcileKey,
