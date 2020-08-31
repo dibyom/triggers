@@ -36,6 +36,8 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
+	appsv1lister "k8s.io/client-go/listers/apps/v1"
+	corev1lister "k8s.io/client-go/listers/core/v1"
 	"knative.dev/pkg/logging"
 	pkgreconciler "knative.dev/pkg/reconciler"
 
@@ -93,7 +95,10 @@ type Reconciler struct {
 	CachingClientSet cachingclientset.Interface
 
 	// listers index properties about resources
+	configmapLister     corev1lister.ConfigMapLister
+	deploymentLister    appsv1lister.DeploymentLister
 	eventListenerLister listers.EventListenerLister
+	serviceLister       corev1lister.ServiceLister
 
 	// systemNamespace is the namespace where the reconciler is deployed
 	systemNamespace string
@@ -125,8 +130,7 @@ func (r *Reconciler) ReconcileKind(ctx context.Context, el *v1alpha1.EventListen
 	return wrapError(serviceReconcileError, deploymentReconcileError)
 }
 
-// Optionally, use FinalizeKind to add finalizers. FinalizeKind will be called
-// when the resource is deleted.
+// FinalizeKind cleans up associated logging config maps when an EventListener is deleted
 func (r *Reconciler) FinalizeKind(ctx context.Context, el *v1alpha1.EventListener) pkgreconciler.Event {
 	logger := logging.FromContext(ctx)
 	cfgs, err := r.eventListenerLister.EventListeners(el.Namespace).List(labels.Everything())
@@ -186,7 +190,7 @@ func (r *Reconciler) reconcileService(logger *zap.SugaredLogger, el *v1alpha1.Ev
 			},
 		},
 	}
-	existingService, err := r.KubeClientSet.CoreV1().Services(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName, metav1.GetOptions{})
+	existingService, err := r.serviceLister.Services(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName)
 	switch {
 	case err == nil:
 		// Determine if reconciliation has to occur
@@ -232,7 +236,7 @@ func (r *Reconciler) reconcileService(logger *zap.SugaredLogger, el *v1alpha1.Ev
 }
 
 func (r *Reconciler) reconcileLoggingConfig(logger *zap.SugaredLogger, el *v1alpha1.EventListener) error {
-	_, err := r.KubeClientSet.CoreV1().ConfigMaps(el.Namespace).Get(eventListenerConfigMapName, metav1.GetOptions{})
+	_, err := r.configmapLister.ConfigMaps(el.Namespace).Get(eventListenerConfigMapName)
 	if errors.IsNotFound(err) {
 		// create default config-logging ConfigMap
 		_, err = r.KubeClientSet.CoreV1().ConfigMaps(el.Namespace).Create(defaultLoggingConfigMap())
@@ -338,7 +342,7 @@ func (r *Reconciler) reconcileDeployment(logger *zap.SugaredLogger, el *v1alpha1
 			},
 		},
 	}
-	existingDeployment, err := r.KubeClientSet.AppsV1().Deployments(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName, metav1.GetOptions{})
+	existingDeployment, err := r.deploymentLister.Deployments(el.Namespace).Get(el.Status.Configuration.GeneratedResourceName)
 	switch {
 	case err == nil:
 		el.Status.SetDeploymentConditions(existingDeployment.Status.Conditions)

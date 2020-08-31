@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	kubeclient "knative.dev/pkg/client/injection/kube/client"
 	deployinformer "knative.dev/pkg/client/injection/kube/informers/apps/v1/deployment"
+	configmapinformer "knative.dev/pkg/client/injection/kube/informers/core/v1/configmap"
 	serviceinformer "knative.dev/pkg/client/injection/kube/informers/core/v1/service"
 	"knative.dev/pkg/configmap"
 	"knative.dev/pkg/controller"
@@ -46,7 +47,10 @@ func NewController(ctx context.Context, cmw configmap.Watcher) *controller.Impl 
 	c := &Reconciler{
 		KubeClientSet:       kubeclientset,
 		TriggersClientSet:   triggersclientset,
+		configmapLister:     configmapinformer.Get(ctx).Lister(),
+		deploymentLister:    deploymentInformer.Lister(),
 		eventListenerLister: eventListenerInformer.Lister(),
+		serviceLister:       serviceInformer.Lister(),
 		systemNamespace:     os.Getenv("SYSTEM_NAMESPACE"),
 	}
 
