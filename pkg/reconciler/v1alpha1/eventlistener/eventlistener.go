@@ -31,7 +31,6 @@ import (
 	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -111,10 +110,8 @@ var (
 // converge the two.
 func (r *Reconciler) ReconcileKind(ctx context.Context, el *v1alpha1.EventListener) pkgreconciler.Event {
 	// Initial reconciliation
-	if equality.Semantic.DeepEqual(el.Status, v1alpha1.EventListenerStatus{}) {
-		el.Status.InitializeConditions()
-		el.Status.Configuration.GeneratedResourceName = fmt.Sprintf("%s-%s", GeneratedResourcePrefix, el.Name)
-	}
+	el.Status.InitializeConditions()
+	el.Status.Configuration.GeneratedResourceName = fmt.Sprintf("%s-%s", GeneratedResourcePrefix, el.Name)
 
 	logger := logging.FromContext(ctx)
 
@@ -194,6 +191,7 @@ func (r *Reconciler) reconcileService(logger *zap.SugaredLogger, el *v1alpha1.Ev
 	case err == nil:
 		// Determine if reconciliation has to occur
 		updated := reconcileObjectMeta(&existingService.ObjectMeta, service.ObjectMeta)
+		el.Status.SetExistsCondition(v1alpha1.ServiceExists, nil)
 		if !reflect.DeepEqual(existingService.Spec.Selector, service.Spec.Selector) {
 			existingService.Spec.Selector = service.Spec.Selector
 			updated = true
@@ -344,6 +342,8 @@ func (r *Reconciler) reconcileDeployment(logger *zap.SugaredLogger, el *v1alpha1
 	switch {
 	case err == nil:
 		el.Status.SetDeploymentConditions(existingDeployment.Status.Conditions)
+		el.Status.SetExistsCondition(v1alpha1.DeploymentExists, nil)
+
 		// Determine if reconciliation has to occur
 		updated := reconcileObjectMeta(&existingDeployment.ObjectMeta, deployment.ObjectMeta)
 		if existingDeployment.Spec.Replicas != deployment.Spec.Replicas {
