@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"cloud.google.com/go/profiler"
 	dynamicClientset "github.com/tektoncd/triggers/pkg/client/dynamic/clientset"
 	"github.com/tektoncd/triggers/pkg/client/dynamic/clientset/tekton"
 	"github.com/tektoncd/triggers/pkg/logging"
@@ -41,6 +42,16 @@ const (
 )
 
 func main() {
+
+	cfg := profiler.Config{
+		Service:        "ELSINK",
+		ServiceVersion: "1.0.0",
+	}
+
+	if err := profiler.Start(cfg); err != nil {
+		log.Fatalf("failed to start profiler: %v", err)
+	}
+
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := signals.SetupSignalHandler()
 

@@ -3,11 +3,12 @@ module github.com/tektoncd/triggers
 go 1.14
 
 require (
+	cloud.google.com/go v0.65.0
 	github.com/GoogleCloudPlatform/cloud-builders/gcs-fetcher v0.0.0-20191203181535-308b93ad1f39
 	github.com/gobuffalo/envy v1.9.0 // indirect
-	github.com/golang/protobuf v1.4.1
+	github.com/golang/protobuf v1.4.2
 	github.com/google/cel-go v0.5.1
-	github.com/google/go-cmp v0.5.0
+	github.com/google/go-cmp v0.5.1
 	github.com/google/go-github/v31 v31.0.0
 	github.com/gorilla/mux v1.7.3
 	github.com/grpc-ecosystem/grpc-gateway v1.13.0 // indirect
@@ -18,8 +19,8 @@ require (
 	github.com/tidwall/sjson v1.0.4
 	go.uber.org/zap v1.15.0
 	golang.org/x/text v0.3.3 // indirect
-	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
-	google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013
+	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
+	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/yaml.v2 v2.3.0
 	k8s.io/api v0.18.2
