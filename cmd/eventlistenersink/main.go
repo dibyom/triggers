@@ -20,14 +20,18 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"go.uber.org/zap"
 
 	"cloud.google.com/go/profiler"
+	"contrib.go.opencensus.io/exporter/stackdriver"
 	dynamicClientset "github.com/tektoncd/triggers/pkg/client/dynamic/clientset"
 	"github.com/tektoncd/triggers/pkg/client/dynamic/clientset/tekton"
 	"github.com/tektoncd/triggers/pkg/logging"
 	"github.com/tektoncd/triggers/pkg/sink"
+	"go.opencensus.io/plugin/ochttp"
+	"go.opencensus.io/trace"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -44,13 +48,17 @@ const (
 func main() {
 
 	cfg := profiler.Config{
-		Service:        "ELSINK",
+		Service:        "el-sink",
 		ServiceVersion: "1.0.0",
+		ProjectID:      "dibyo-tekton-dev",
+		DebugLogging:   true,
 	}
 
 	if err := profiler.Start(cfg); err != nil {
 		log.Fatalf("failed to start profiler: %v", err)
 	}
+
+	initCensus()
 
 	// set up signals so we handle the first shutdown signal gracefully
 	stopCh := signals.SetupSignalHandler()
@@ -106,11 +114,42 @@ func main() {
 
 	// Listen and serve
 	logger.Infof("Listen and serve on port %s", sinkArgs.Port)
-	http.HandleFunc("/", r.HandleEvent)
+
+	handler := http.NewServeMux()
+
+	handler.HandleFunc("/", r.HandleEvent)
+
 	// For handling Liveness Probe
-	http.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
+	handler.HandleFunc("/live", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		fmt.Fprint(w, "ok")
 	})
-	logger.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", sinkArgs.Port), nil))
+	och := &ochttp.Handler{
+		Handler: handler, // The handler you'd have used originally
+	}
+
+	logger.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", sinkArgs.Port), och))
+}
+
+func initCensus() {
+	sd, err := stackdriver.NewExporter(stackdriver.Options{
+		ProjectID: "dibyo-tekton-dev",
+		// MetricPrefix helps uniquely identify your metrics.
+		MetricPrefix: "el-sink",
+		// ReportingInterval sets the frequency of reporting metrics
+		// to stackdriver backend.
+		ReportingInterval: 60 * time.Second,
+	})
+	if err != nil {
+		log.Fatalf("Failed to create the Stackdriver exporter: %v", err)
+	}
+	// It is imperative to invoke flush before your main function exits
+	defer sd.Flush()
+
+	// Start the metrics exporter
+	sd.StartMetricsExporter()
+	defer sd.StopMetricsExporter()
+
+	// Register it as a trace exporter
+	trace.RegisterExporter(sd)
 }

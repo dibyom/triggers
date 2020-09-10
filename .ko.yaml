@@ -1,1 +1,1 @@
-defaultBaseImage: gcr.io/distroless/static:nonroot
+defaultBaseImage: golang:1.15
