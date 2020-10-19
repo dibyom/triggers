@@ -17,6 +17,7 @@ limitations under the License.
 package gitlab
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -43,8 +45,8 @@ type Interceptor struct {
 }
 
 type params struct {
-	SecretRef  *SecretRef `json:"secretRef,omitempty"`
-	EventTypes []string   `json:"eventTypes,omitempty"`
+	SecretRef  *triggersv1.SecretRef `json:"secretRef,omitempty"`
+	EventTypes []string              `json:"eventTypes,omitempty"`
 }
 
 func NewInterceptor(gl *triggersv1.GitLabInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) *Interceptor {
@@ -116,37 +118,47 @@ func (w *Interceptor) Process(r *triggersv1.InterceptorRequest) *triggersv1.Inte
 	if p.SecretRef != nil {
 		header := http.Header(r.Header).Get("X-GitLab-Token")
 		if header == "" {
-			return status. errors.New("no X-GitLab-Token header set")
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.InvalidArgument, "no X-GitLab-Token header set"),
+			}
 		}
-
-		secretToken, err := interceptors.GetSecretToken(request, w.KubeClientSet, w.GitLab.SecretRef, w.EventListenerNamespace)
+		// Hack what to do with namespace? Needs to be passed in via a context>
+		// FIXME: Use a real context
+		secret, err := w.KubeClientSet.CoreV1().Secrets(r.TriggerNamespace).Get(context.Background(), p.SecretRef.SecretName, metav1.GetOptions{})
 		if err != nil {
-			return nil, err
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.Internal, fmt.Sprintf("error getting secret: %v", err)),
+			}
 		}
+		secretToken := secret.Data[p.SecretRef.SecretKey]
 
 		// Make sure to use a constant time comparison here.
 		if subtle.ConstantTimeCompare([]byte(header), secretToken) == 0 {
-			return nil, errors.New("Invalid X-GitLab-Token")
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.InvalidArgument, "Invalid X-GitLab-Token"),
+			}
 		}
 	}
-	if w.GitLab.EventTypes != nil {
-		actualEvent := request.Header.Get("X-GitLab-Event")
+	if p.EventTypes != nil {
+		actualEvent := http.Header(r.Header).Get("X-GitLab-Event")
 		isAllowed := false
-		for _, allowedEvent := range w.GitLab.EventTypes {
+		for _, allowedEvent := range p.EventTypes {
 			if actualEvent == allowedEvent {
 				isAllowed = true
 				break
 			}
 		}
 		if !isAllowed {
-			return nil, fmt.Errorf("event type %s is not allowed", actualEvent)
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("event type %s is not allowed", actualEvent)),
+			}
 		}
 	}
-
-	return &http.Response{
-		Header: request.Header,
-		Body:   request.Body,
-	}, nil
-
-	return nil
+	return &triggersv1.InterceptorResponse{
+		Continue: true,
+	}
 }

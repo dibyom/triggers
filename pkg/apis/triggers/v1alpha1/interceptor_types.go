@@ -17,6 +17,8 @@ type InterceptorRequest struct {
 	EventID string `json:"event_id,omitempty"`
 	// TriggerID is of the form namespace/$ns/triggers/$name
 	TriggerID string `json:"trigger_id,omitempty"`
+	// TriggerNamespace is the namespace of the Trigger
+	TriggerNamespace string `json:"trigger_namespace,omitempty`
 }
 
 type InterceptorResponse struct {
@@ -24,7 +26,7 @@ type InterceptorResponse struct {
 	// See TEP-0022. Naming TBD.
 	Extensions map[string]interface{} `json:"extensions,omitempty"`
 	Continue   bool                   `json:"continue,omitempty"`
-	Status     status.Status          `json:"status"`
+	Status     *status.Status         `json:"status"`
 }
 
 type InterceptorInterface interface {
