@@ -224,6 +224,11 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 			return nil, nil, fmt.Errorf("unknown interceptor type: %v", i)
 		}
 		var err error
+		if _, ok := interceptor.(triggersv1.InterceptorInterface); ok {
+
+		} else {
+			
+		}
 		resp, err = interceptor.ExecuteTrigger(request)
 		if err != nil {
 			return nil, nil, err

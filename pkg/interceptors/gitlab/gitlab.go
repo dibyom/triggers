@@ -96,9 +96,7 @@ func (w *Interceptor) ExecuteTrigger(request *http.Request) (*http.Response, err
 	}, nil
 }
 
-func (w *Interceptor) Process(r *triggersv1.InterceptorRequest) *triggersv1.InterceptorResponse {
-	// HACK
-	// Validate the secret first, if set.
+func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequest) *triggersv1.InterceptorResponse {
 	b, err := json.Marshal(r.InterceptorParams)
 	if err != nil {
 		return &triggersv1.InterceptorResponse{
@@ -125,7 +123,8 @@ func (w *Interceptor) Process(r *triggersv1.InterceptorRequest) *triggersv1.Inte
 		}
 		// Hack what to do with namespace? Needs to be passed in via a context>
 		// FIXME: Use a real context
-		secret, err := w.KubeClientSet.CoreV1().Secrets(r.TriggerNamespace).Get(context.Background(), p.SecretRef.SecretName, metav1.GetOptions{})
+		ns, _ := triggersv1.ParseTriggerID(r.Context.TriggerID)
+		secret, err := w.KubeClientSet.CoreV1().Secrets(ns).Get(ctx, p.SecretRef.SecretName, metav1.GetOptions{})
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
