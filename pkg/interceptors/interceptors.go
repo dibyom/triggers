@@ -18,13 +18,11 @@ package interceptors
 
 import (
 	"context"
-	"net/http"
-	"path"
-	"strings"
-
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"net/http"
+	"path"
 )
 
 // Interceptor is the interface that all interceptors implement.
@@ -86,8 +84,8 @@ func GetSecretToken(req *http.Request, cs kubernetes.Interface, sr *triggersv1.S
 }
 
 // GetInterceptorParams returns InterceptorParams for the current interceptors
-func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]string {
- ip := map[string]string{}
+func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]interface{} {
+ ip := map[string]interface{}{}
  switch {
 	case i.Webhook != nil:
 		// WebHook headers are of type map[string][]string.
@@ -95,19 +93,17 @@ func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]string {
 		return ip
 	case i.GitHub != nil:
 		if i.GitHub.EventTypes != nil {
-			ip["eventTypes"] = strings.Join(i.GitHub.EventTypes, "")
+			ip["eventTypes"] = i.GitHub.EventTypes
 		}
 		if i.GitHub.SecretRef != nil {
-			ip["secretKey"] = i.GitHub.SecretRef.SecretKey
-			ip["secretName"] = i.GitHub.SecretRef.SecretName
+			ip["secretRef"] = i.GitHub.SecretRef
 		}
 	case i.GitLab != nil:
 		if i.GitLab.EventTypes != nil {
-			ip["eventTypes"] = strings.Join(i.GitLab.EventTypes, "")
+			ip["eventTypes"] = i.GitLab.EventTypes
 		}
 		if i.GitLab.SecretRef != nil {
-			ip["secretKey"] = i.GitLab.SecretRef.SecretKey
-			ip["secretName"] = i.GitLab.SecretRef.SecretName
+			ip["secretRef"] = i.GitLab.SecretRef
 		}
 	case i.CEL != nil:
 		if i.CEL.Filter != "" {
@@ -115,19 +111,15 @@ func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]string {
 		}
 
 		if i.CEL.Overlays != nil {
-			// TODO: How do we represent Overlays as we do today???
-			// Can InterceptorTypes be a param <name>/<field>??
-			// Are there multiple overlays somewhere??
-			panic("OVERLAYS NOT SUPPORTED YET")
+			ip["overlays"] = i.CEL.Overlays
 		}
 
 	case i.Bitbucket != nil:
 		if i.Bitbucket.EventTypes != nil {
-			ip["eventTypes"] = strings.Join(i.Bitbucket.EventTypes, "")
+			ip["eventTypes"] = i.Bitbucket.EventTypes
 		}
 		if i.Bitbucket.SecretRef != nil {
-			ip["secretKey"] = i.Bitbucket.SecretRef.SecretKey
-			ip["secretName"] = i.Bitbucket.SecretRef.SecretName
+			ip["secretRef"] = i.Bitbucket.SecretRef
 		}
 	}
 

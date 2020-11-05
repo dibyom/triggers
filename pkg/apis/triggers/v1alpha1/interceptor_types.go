@@ -18,7 +18,7 @@ type InterceptorRequest struct {
 	Header map[string][]string `json:"header,omitempty"`
 
 	// InterceptorParams are the user specified params for the interceptor
-	InterceptorParams map[string]string `json:"interceptor_ params,omitempty"`
+	InterceptorParams map[string]interface{}`json:"interceptor_params,omitempty"`
 
 	Context *TriggerContext
 }

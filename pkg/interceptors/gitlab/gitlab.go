@@ -22,11 +22,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"strings"
-
 	"github.com/tektoncd/triggers/pkg/interceptors"
 	"google.golang.org/grpc/status"
+	"net/http"
 
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -48,7 +46,7 @@ type Interceptor struct {
 type params struct {
 	SecretRef  *triggersv1.SecretRef `json:"secretRef,omitempty"`
 	// EventTypes is actually an array of string joined by ,
-	EventTypes string              `json:"eventTypes,omitempty"`
+	EventTypes []string              `json:"eventTypes,omitempty"`
 }
 
 func NewInterceptor(gl *triggersv1.GitLabInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) *Interceptor {
@@ -124,7 +122,6 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 			}
 		}
 		// Hack what to do with namespace? Needs to be passed in via a context>
-		// FIXME: Use a real context
 		ns, _ := triggersv1.ParseTriggerID(r.Context.TriggerID)
 		secret, err := w.KubeClientSet.CoreV1().Secrets(ns).Get(ctx, p.SecretRef.SecretName, metav1.GetOptions{})
 		if err != nil {
@@ -143,10 +140,10 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 			}
 		}
 	}
-	if p.EventTypes != "" {
+	if p.EventTypes != nil{
 		actualEvent := http.Header(r.Header).Get("X-GitLab-Event")
 		isAllowed := false
-		for _, allowedEvent := range strings.Split(p.EventTypes, ",") {
+		for _, allowedEvent := range p.EventTypes {
 			if actualEvent == allowedEvent {
 				isAllowed = true
 				break
