@@ -88,11 +88,18 @@ type Trigger struct {
 
 // TriggerInterceptor provides a hook to intercept and pre-process events
 type TriggerInterceptor struct {
-	Webhook   *WebhookInterceptor   `json:"webhook,omitempty"`
-	GitHub    *GitHubInterceptor    `json:"github,omitempty"`
-	GitLab    *GitLabInterceptor    `json:"gitlab,omitempty"`
-	CEL       *CELInterceptor       `json:"cel,omitempty"`
-	Bitbucket *BitbucketInterceptor `json:"bitbucket,omitempty"`
+	Webhook        *WebhookInterceptor   `json:"webhook,omitempty"`
+	GitHub         *GitHubInterceptor    `json:"github,omitempty"`
+	GitLab         *GitLabInterceptor    `json:"gitlab,omitempty"`
+	CEL            *CELInterceptor       `json:"cel,omitempty"`
+	Bitbucket      *BitbucketInterceptor `json:"bitbucket,omitempty"`
+	Name           *string               `json:"name,omitempty"`
+	InterceptorRef *InterceptorRef       `json:"interceptorRef,omitempty"`
+	Params         *map[string]string    `json:"params,omitempty"`
+}
+
+type InterceptorRef struct {
+	Name string `json:"name"`
 }
 
 // WebhookInterceptor provides a webhook to intercept and pre-process events

@@ -159,7 +159,7 @@ func (r Sink) processTrigger(t *triggersv1.EventListenerTrigger, request *http.R
 
 	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, t.Name))
 
-	finalPayload, header, err := r.ExecuteInterceptors(t, request, event, log)
+	finalPayload, header, err := r.ExecuteInterceptors(t, request, event, log, eventID)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -189,7 +189,7 @@ func (r Sink) processTrigger(t *triggersv1.EventListenerTrigger, request *http.R
 	return nil
 }
 
-func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.Request, event []byte, log *zap.SugaredLogger) ([]byte, http.Header, error) {
+func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.Request, event []byte, log *zap.SugaredLogger, eventID string) ([]byte, http.Header, error) {
 	if len(t.Interceptors) == 0 {
 		return event, in.Header, nil
 	}
@@ -207,6 +207,7 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 	request = interceptors.WithCache(request)
 
 	var resp *http.Response
+	var iresp *triggersv1.InterceptorResponse
 	for _, i := range t.Interceptors {
 		var interceptor interceptors.Interceptor
 		switch {
@@ -224,31 +225,64 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 			return nil, nil, fmt.Errorf("unknown interceptor type: %v", i)
 		}
 		var err error
-		if _, ok := interceptor.(triggersv1.InterceptorInterface); ok {
+		if newi, ok := interceptor.(triggersv1.InterceptorInterface); ok {
+			log.Warn("USING THE NEW STUFF")
+			ip := interceptors.GetInterceptorParams(i)
+			log.Warn("PARAMS are: %v", ip)
+			req := triggersv1.InterceptorRequest{
+				Body:           event,
+				Header:            request.Header.Clone(),
+				// Keys come from Type; Values come from the interceptor config itself
+				InterceptorParams: ip,
+				Context:          &triggersv1.TriggerContext{
+					EventURL:  request.URL.String(),
+					EventID:   eventID,
+					TriggerID: fmt.Sprintf("namespaces/%s/triggers/%s", r.EventListenerNamespace, t.Name), // TODO: t.Name might be wrong
+				} ,
+			}
+			iresp = newi.Process(context.Background(), &req)
+			if !iresp.Continue {
+				log.Infof("interceptor response not continue: %s", iresp.Status.Message())
+				return nil, nil, iresp.Status.Err()
+			}
+			request = &http.Request{
+				Method: http.MethodPost,
+				Header: request.Header.Clone(),
+				URL:    in.URL,
+			}
+
+			if iresp.Extensions != nil {
+				// TODO: Add extensions to body
+				// Unmarshall to map[struct]struct
+				// Marshall to new types
+				//MergeExtensions(res.Extensions, event)
+			} else {
+				request.Body = ioutil.NopCloser(bytes.NewBuffer(event))
+			}
 
 		} else {
-			
-		}
-		resp, err = interceptor.ExecuteTrigger(request)
-		if err != nil {
-			return nil, nil, err
-		}
+			resp, err = interceptor.ExecuteTrigger(request)
+			if err != nil {
+				return nil, nil, err
+			}
 
-		// Set the next request to be the output of the last response to enable
-		// request chaining.
-		request = &http.Request{
-			Method: http.MethodPost,
-			Header: resp.Header,
-			URL:    in.URL,
-			Body:   ioutil.NopCloser(resp.Body),
+			// Set the next request to be the output of the last response to enable
+			// request chaining.
+			request = &http.Request{
+				Method: http.MethodPost,
+				Header: resp.Header,
+				URL:    in.URL,
+				Body:   ioutil.NopCloser(resp.Body),
+			}
 		}
 	}
-	payload, err := ioutil.ReadAll(resp.Body)
+	// Read the last request's body
+	payload, err := ioutil.ReadAll(request.Body)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading final response body: %w", err)
 	}
-	defer resp.Body.Close()
-	return payload, resp.Header, nil
+	defer request.Body.Close()
+	return payload, request.Header, nil
 }
 
 func (r Sink) CreateResources(sa string, res []json.RawMessage, triggerName, eventID string, log *zap.SugaredLogger) error {

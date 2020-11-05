@@ -56,7 +56,7 @@ type InterceptorConfigurationSpec struct {
 	// Required
 	ClientConfig InterceptorClientConfig `json:"clientConfig"`
 
-	// Params declare interceptor specific fields thatthe user can configure per Trigger.
+	// Params declare interceptor specific fields that the user can configure per Trigger.
 	Params []InterceptorParamSpec `json:"params"`
 }
 
@@ -87,19 +87,19 @@ type InterceptorParamSpec struct {
 type ServiceReference struct {
 	// `namespace` is the namespace of the service.
 	// Required
-	Namespace string `json:"namespace" protobuf:"bytes,1,opt,name=namespace"`
+	Namespace string `json:"namespace"`
 	// `name` is the name of the service.
 	// Required
-	Name string `json:"name" protobuf:"bytes,2,opt,name=name"`
+	Name string `json:"name"`
 
 	// `path` is an optional URL path which will be sent in any request to
 	// this service.
 	// +optional
-	Path *string `json:"path,omitempty" protobuf:"bytes,3,opt,name=path"`
+	Path *string `json:"path,omitempty"`
 
 	// If specified, the port on the service that hosting webhook.
 	// Default to 443 for backward compatibility.
 	// `port` should be a valid port number (1-65535, inclusive).
 	// +optional
-	Port *int32 `json:"port,omitempty" protobuf:"varint,4,opt,name=port"`
+	Port *int32 `json:"port,omitempty"`
 }

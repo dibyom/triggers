@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/tektoncd/triggers/pkg/interceptors"
 	"google.golang.org/grpc/status"
@@ -46,7 +47,8 @@ type Interceptor struct {
 
 type params struct {
 	SecretRef  *triggersv1.SecretRef `json:"secretRef,omitempty"`
-	EventTypes []string              `json:"eventTypes,omitempty"`
+	// EventTypes is actually an array of string joined by ,
+	EventTypes string              `json:"eventTypes,omitempty"`
 }
 
 func NewInterceptor(gl *triggersv1.GitLabInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) *Interceptor {
@@ -104,8 +106,8 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 			Status:   status.New(codes.InvalidArgument, fmt.Sprintf("failed to marshal json: %v", err)),
 		}
 	}
-	var p *params
-	if err := json.Unmarshal(b, p); err != nil {
+	p := params{}
+	if err := json.Unmarshal(b, &p); err != nil {
 		// Should never happen since Unmarshall only returns err if json is invalid which we already check above
 		return &triggersv1.InterceptorResponse{
 			Continue: false,
@@ -141,10 +143,10 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 			}
 		}
 	}
-	if p.EventTypes != nil {
+	if p.EventTypes != "" {
 		actualEvent := http.Header(r.Header).Get("X-GitLab-Event")
 		isAllowed := false
-		for _, allowedEvent := range p.EventTypes {
+		for _, allowedEvent := range strings.Split(p.EventTypes, ",") {
 			if actualEvent == allowedEvent {
 				isAllowed = true
 				break

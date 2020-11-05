@@ -805,7 +805,7 @@ func TestExecuteInterceptor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("http.NewRequest: %v", err)
 			}
-			resp, header, err := r.ExecuteInterceptors(trigger, req, []byte(`{}`), logger.Sugar())
+			resp, header, err := r.ExecuteInterceptors(trigger, req, []byte(`{}`), logger.Sugar(), eventID)
 			if err != nil {
 				t.Fatalf("executeInterceptors: %v", err)
 			}
@@ -886,7 +886,7 @@ func TestExecuteInterceptor_error(t *testing.T) {
 	if err != nil {
 		t.Fatalf("http.NewRequest: %v", err)
 	}
-	if resp, _, err := s.ExecuteInterceptors(trigger, req, nil, logger.Sugar()); err == nil {
+	if resp, _, err := s.ExecuteInterceptors(trigger, req, nil, logger.Sugar(), eventID); err == nil {
 		t.Errorf("expected error, got: %+v, %v", string(resp), err)
 	}
 
