@@ -199,7 +199,7 @@ func processTriggerSpec(kubeClient kubernetes.Interface, client triggersclientse
 
 	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, el.Name))
 
-	finalPayload, header, err := r.ExecuteInterceptors(&el, request, body, log, eventID)
+	finalPayload, header, extensions, err := r.ExecuteInterceptors(&el, request, body, log, eventID)
 	if err != nil {
 		log.Error(err)
 		return nil, err
@@ -218,7 +218,7 @@ func processTriggerSpec(kubeClient kubernetes.Interface, client triggersclientse
 		return nil, err
 	}
 
-	params, err := template.ResolveParams(rt, finalPayload, header)
+	params, err := template.ResolveParams(rt, finalPayload, header, extensions)
 	if err != nil {
 		log.Error("Failed to resolve parameters", err)
 		return nil, err

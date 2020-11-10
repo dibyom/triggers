@@ -159,7 +159,7 @@ func (r Sink) processTrigger(t *triggersv1.EventListenerTrigger, request *http.R
 
 	log := eventLog.With(zap.String(triggersv1.TriggerLabelKey, t.Name))
 
-	finalPayload, header, err := r.ExecuteInterceptors(t, request, event, log, eventID)
+	finalPayload, header, extensions, err := r.ExecuteInterceptors(t, request, event, log, eventID)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -174,7 +174,7 @@ func (r Sink) processTrigger(t *triggersv1.EventListenerTrigger, request *http.R
 		return err
 	}
 
-	params, err := template.ResolveParams(rt, finalPayload, header)
+	params, err := template.ResolveParams(rt, finalPayload, header, extensions)
 	if err != nil {
 		log.Error(err)
 		return err
@@ -189,9 +189,10 @@ func (r Sink) processTrigger(t *triggersv1.EventListenerTrigger, request *http.R
 	return nil
 }
 
-func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.Request, event []byte, log *zap.SugaredLogger, eventID string) ([]byte, http.Header, error) {
+// This function returns 4 things and could do with some refactoring. In the future, we will only return extensions and not body and headers
+func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.Request, event []byte, log *zap.SugaredLogger, eventID string) ([]byte, http.Header, map[string]interface{}, error) {
 	if len(t.Interceptors) == 0 {
-		return event, in.Header, nil
+		return event, in.Header, nil,  nil
 	}
 
 	// request is the request sent to the interceptors in the chain. Each interceptor can set the InterceptorParams field
@@ -231,7 +232,7 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 		case i.Bitbucket != nil:
 			interceptor = bitbucket.NewInterceptor(i.Bitbucket, r.KubeClientSet, r.EventListenerNamespace, log)
 		default:
-			return nil, nil, fmt.Errorf("unknown interceptor type: %v", i)
+			return nil, nil, nil, fmt.Errorf("unknown interceptor type: %v", i)
 		}
 
 		var err error
@@ -243,7 +244,7 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 			iresp = interceptorInterface.Process(context.Background(), &request)
 			if !iresp.Continue {
 				log.Infof("interceptor response not continue: %s", iresp.Status.Message())
-				return nil, nil, iresp.Status.Err()
+				return nil, nil, nil, iresp.Status.Err()
 			}
 
 			if iresp.Extensions != nil {
@@ -265,12 +266,12 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 
 			resp, err = interceptor.ExecuteTrigger(req)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 
 			payload, err := ioutil.ReadAll(resp.Body)
 			if err != nil {
-				return nil, nil, fmt.Errorf("error reading webhook interceptor response body: %w", err)
+				return nil, nil, nil, fmt.Errorf("error reading webhook interceptor response body: %w", err)
 			}
 			defer resp.Body.Close()
 			// Set the next request to be the output of the last response to enable
@@ -283,7 +284,7 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 
 	// We should Return an Event that contains Body,Header,Extensions
 	// TODO: We need to send extensions back
-	return request.Body, request.Header, nil
+	return request.Body, request.Header, request.Extensions, nil
 }
 
 func (r Sink) CreateResources(sa string, res []json.RawMessage, triggerName, eventID string, log *zap.SugaredLogger) error {
