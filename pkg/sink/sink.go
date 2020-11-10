@@ -194,22 +194,31 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 		return event, in.Header, nil
 	}
 
-	// The request body to the first interceptor in the chain should be the received event body.
-	request := &http.Request{
-		Method: http.MethodPost,
-		Header: in.Header,
-		URL:    in.URL,
-		Body:   ioutil.NopCloser(bytes.NewBuffer(event)),
+	// request is the request sent to the interceptors in the chain. Each interceptor can set the InterceptorParams field
+	// or add to the Extensions
+	request := triggersv1.InterceptorRequest{
+		Body:           event,
+		Header:            in.Header.Clone(),
+		Extensions: map[string]interface{}{}, // Empty extensions for the first interceptor in chain
+		//InterceptorParams: ip, // To be added by the initial interceptor
+		Context:          &triggersv1.TriggerContext{
+			EventURL:  in.URL.String(),
+			EventID:   eventID,
+			TriggerID: fmt.Sprintf("namespaces/%s/triggers/%s", r.EventListenerNamespace, t.Name), // TODO: t.Name might be wrong
+		} ,
 	}
 
 	// We create a cache against each request, so whenever we make network calls like
 	// fetching kubernetes secrets, we can do so only once per request.
-	request = interceptors.WithCache(request)
+	// This cache wasn't all that useful due to it being request scoped.
+	// TODO(dibyom): Switch to a lister/informer based cache
+	//request = interceptors.WithCache(request)
 
 	var resp *http.Response
 	var iresp *triggersv1.InterceptorResponse
 	for _, i := range t.Interceptors {
 		var interceptor interceptors.Interceptor
+		// We still need this block till we move the interceptors to their own processes.
 		switch {
 		case i.Webhook != nil:
 			interceptor = webhook.NewInterceptor(i.Webhook, r.HTTPClient, r.EventListenerNamespace, log)
@@ -224,65 +233,57 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 		default:
 			return nil, nil, fmt.Errorf("unknown interceptor type: %v", i)
 		}
+
 		var err error
-		if newi, ok := interceptor.(triggersv1.InterceptorInterface); ok {
-			log.Warn("USING THE NEW STUFF")
-			ip := interceptors.GetInterceptorParams(i)
-			log.Warn("PARAMS are: %v", ip)
-			req := triggersv1.InterceptorRequest{
-				Body:           event,
-				Header:            request.Header.Clone(),
-				// Keys come from Type; Values come from the interceptor config itself
-				InterceptorParams: ip,
-				Context:          &triggersv1.TriggerContext{
-					EventURL:  request.URL.String(),
-					EventID:   eventID,
-					TriggerID: fmt.Sprintf("namespaces/%s/triggers/%s", r.EventListenerNamespace, t.Name), // TODO: t.Name might be wrong
-				} ,
-			}
-			iresp = newi.Process(context.Background(), &req)
+		// Webhook interceptor still follows old interface
+		if interceptorInterface, ok := interceptor.(triggersv1.InterceptorInterface); ok {
+			// Set per interceptor config params to the request
+			request.InterceptorParams = interceptors.GetInterceptorParams(i)
+			// TODO: pipe in context from sink
+			iresp = interceptorInterface.Process(context.Background(), &request)
 			if !iresp.Continue {
 				log.Infof("interceptor response not continue: %s", iresp.Status.Message())
 				return nil, nil, iresp.Status.Err()
 			}
-			request = &http.Request{
-				Method: http.MethodPost,
-				Header: request.Header.Clone(),
-				URL:    in.URL,
-			}
 
 			if iresp.Extensions != nil {
-				// TODO: Add extensions to body
-				// Unmarshall to map[struct]struct
-				// Marshall to new types
-				//MergeExtensions(res.Extensions, event)
-			} else {
-				request.Body = ioutil.NopCloser(bytes.NewBuffer(event))
+				// Merge any extensions and pass it on to the next request in the chain
+				for k,v := range iresp.Extensions {
+					request.Extensions[k] = v
+				}
+			}
+			// Clear interceptorParams for the next interceptor in chain
+			request.InterceptorParams = map[string]interface{}{}
+		} else {
+			// Old style interceptor (only Webhook)
+			req := &http.Request{
+				Method: http.MethodPost,
+				Header: in.Header,
+				URL:    in.URL,
+				Body:   ioutil.NopCloser(bytes.NewBuffer(event)),
 			}
 
-		} else {
-			resp, err = interceptor.ExecuteTrigger(request)
+			resp, err = interceptor.ExecuteTrigger(req)
 			if err != nil {
 				return nil, nil, err
 			}
 
+			payload, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error reading webhook interceptor response body: %w", err)
+			}
+			defer resp.Body.Close()
 			// Set the next request to be the output of the last response to enable
 			// request chaining.
-			request = &http.Request{
-				Method: http.MethodPost,
-				Header: resp.Header,
-				URL:    in.URL,
-				Body:   ioutil.NopCloser(resp.Body),
-			}
+			request.Header = resp.Header.Clone()
+			request.Body = payload
 		}
 	}
-	// Read the last request's body
-	payload, err := ioutil.ReadAll(request.Body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error reading final response body: %w", err)
-	}
-	defer request.Body.Close()
-	return payload, request.Header, nil
+
+
+	// We should Return an Event that contains Body,Header,Extensions
+	// TODO: We need to send extensions back
+	return request.Body, request.Header, nil
 }
 
 func (r Sink) CreateResources(sa string, res []json.RawMessage, triggerName, eventID string, log *zap.SugaredLogger) error {

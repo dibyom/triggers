@@ -662,7 +662,7 @@ func TestMakeEvalContextWithError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	payload := []byte(`{"tes`)
 
-	_, err := makeEvalContext(payload, req)
+	_, err := makeEvalContext(payload, req.Header, req.URL.String())
 
 	if !matchError(t, "failed to parse the body as JSON: unexpected end of JSON input", err) {
 		t.Fatalf("failed to match the error: %s", err)

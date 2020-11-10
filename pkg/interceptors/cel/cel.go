@@ -18,8 +18,11 @@ package cel
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io/ioutil"
 	"net/http"
 	"reflect"
@@ -41,6 +44,8 @@ import (
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 )
 
+var _ triggersv1.InterceptorInterface = (*Interceptor)(nil)
+
 // Interceptor implements a CEL based interceptor that uses CEL expressions
 // against the incoming body and headers to match, if the expression returns
 // a true value, then the interception is "successful".
@@ -56,6 +61,9 @@ var (
 	listType   = reflect.TypeOf(&structpb.ListValue{})
 	mapType    = reflect.TypeOf(&structpb.Struct{})
 )
+
+
+type params = triggersv1.CELInterceptor
 
 // NewInterceptor creates a prepopulated Interceptor.
 func NewInterceptor(cel *triggersv1.CELInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) interceptors.Interceptor {
@@ -83,7 +91,7 @@ func (w *Interceptor) ExecuteTrigger(request *http.Request) (*http.Response, err
 		}
 	}
 
-	evalContext, err := makeEvalContext(payload, request)
+	evalContext, err := makeEvalContext(payload, request.Header, request.URL.String())
 	if err != nil {
 		return nil, fmt.Errorf("error making the evaluation context: %w", err)
 	}
@@ -199,7 +207,7 @@ func makeCelEnv(request *http.Request, ns string, k kubernetes.Interface) (*cel.
 		))
 }
 
-func makeEvalContext(body []byte, r *http.Request) (map[string]interface{}, error) {
+func makeEvalContext(body []byte, h http.Header, url string) (map[string]interface{}, error) {
 	var jsonMap map[string]interface{}
 	err := json.Unmarshal(body, &jsonMap)
 	if err != nil {
@@ -207,7 +215,150 @@ func makeEvalContext(body []byte, r *http.Request) (map[string]interface{}, erro
 	}
 	return map[string]interface{}{
 		"body":       jsonMap,
-		"header":     r.Header,
-		"requestURL": r.URL.String(),
+		"header":     h,
+		"requestURL": url,
 	}, nil
+}
+
+func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequest) *triggersv1.InterceptorResponse {
+	b, err := json.Marshal(r.InterceptorParams)
+	if err != nil {
+		return &triggersv1.InterceptorResponse{
+			Continue: false,
+			Status:   status.New(codes.InvalidArgument, fmt.Sprintf("failed to marshal json: %v", err)),
+		}
+	}
+	p := params{}
+	if err := json.Unmarshal(b, &p); err != nil {
+		// Should never happen since Unmarshall only returns err if json is invalid which we already check above
+		return &triggersv1.InterceptorResponse{
+			Continue: false,
+			Status:   status.New(codes.InvalidArgument, fmt.Sprintf("invalid json: %v", err)),
+		}
+	}
+	ns, _ := triggersv1.ParseTriggerID(r.Context.TriggerID)
+
+	// The first arg is a http.Request whose only purpose is to retrieve a request scoped cache for fetching secrets
+	// The cache isn't perfect since each Trigger runs in a different goroutine, and is only applicable if the
+	// compareSecrets function is used.
+	// TODO(): We should refactor interceptors.GetSecretToken to not use a request scoped cache and instead use a Lister
+	// That should also allow use to makeCelEnv once and reuse it across requests
+	env, err := makeCelEnv(nil, ns, w.KubeClientSet)
+	if err != nil {
+		return &triggersv1.InterceptorResponse{
+			Continue: false,
+			Status:   status.New(codes.Internal, fmt.Sprintf("error creating cel environment: %w", err)),
+		}
+	}
+
+	var payload = []byte(`{}`)
+	if r.Body != nil {
+		payload = r.Body
+	}
+
+	evalContext, err := makeEvalContext(payload, r.Header, r.Context.EventURL)
+	if err != nil {
+		return &triggersv1.InterceptorResponse{
+			Continue: false,
+			Status:   status.New(codes.Internal, fmt.Sprintf("error making the evaluation context: %w", err)),
+		}
+	}
+
+	if p.Filter != "" {
+		// TODO: Return error message from CEL that can be returned via as a status.Details
+		out, err := evaluate(p.Filter, env, evalContext)
+
+		if err != nil {
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %w", err)),
+			}
+		}
+
+		if out != types.True {
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("expression %s did not return true", p.Filter)),
+			}
+		}
+	}
+
+	extensions := map[string]interface{}{}
+
+	for _, u := range p.Overlays {
+		val, err := evaluate(u.Expression, env, evalContext)
+		if err != nil {
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %w", err)),
+			}
+		}
+
+		var raw interface{}
+		//var b []byte
+
+		switch val.(type) {
+		case types.String:
+			raw, err = val.ConvertToNative(structType)
+			//if err == nil {
+			//	b, err = json.Marshal(raw.(*structpb.Value).GetStringValue())
+			//}
+		case types.Double, types.Int:
+			raw, err = val.ConvertToNative(structType)
+			//if err == nil {
+			//	b, err = json.Marshal(raw.(*structpb.Value).GetNumberValue())
+			//}
+		case traits.Lister:
+			raw, err = val.ConvertToNative(listType)
+			//if err == nil {
+			//	s, err := protojson.Marshal(raw.(proto.Message))
+			//	if err == nil {
+			//		b = []byte(s)
+			//	}
+			//}
+		case traits.Mapper:
+			raw, err = val.ConvertToNative(mapType)
+			//if err == nil {
+			//	s, err := protojson.Marshal(raw.(proto.Message))
+			//	if err == nil {
+			//		b = []byte(s)
+			//	}
+			//}
+		case types.Bool:
+			raw, err = val.ConvertToNative(structType)
+			//if err == nil {
+			//	b, err = json.Marshal(raw.(*structpb.Value).GetBoolValue())
+			//}
+		default:
+			raw, err = val.ConvertToNative(reflect.TypeOf([]byte{}))
+			//if err == nil {
+			//	b = raw.([]byte)
+			//}
+		}
+
+		if err != nil {
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("failed to convert overlay result to type: %w", err)),
+			}
+		}
+
+		// TODO: For backwards compatibility, we could keep this and return the body back?
+		// payload, err = sjson.SetRawBytes(payload, u.Key, b)
+
+		//if err != nil {
+		//	return nil, fmt.Errorf("failed to sjson for key '%s' to '%s': %w", u.Key, val, err)
+		//}
+		extensions[u.Key] = raw
+	}
+
+	//return &http.Response{
+	//	Header: request.Header,
+	//	Body:   ioutil.NopCloser(bytes.NewBuffer(payload)),
+	//}, nil
+
+	return &triggersv1.InterceptorResponse{
+		Continue: true,
+		Extensions: extensions,
+	}
 }
