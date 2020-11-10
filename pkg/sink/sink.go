@@ -259,9 +259,9 @@ func (r Sink) ExecuteInterceptors(t *triggersv1.EventListenerTrigger, in *http.R
 			// Old style interceptor (only Webhook)
 			req := &http.Request{
 				Method: http.MethodPost,
-				Header: in.Header,
+				Header: request.Header,
 				URL:    in.URL,
-				Body:   ioutil.NopCloser(bytes.NewBuffer(event)),
+				Body:   ioutil.NopCloser(bytes.NewBuffer(request.Body)),
 			}
 
 			resp, err = interceptor.ExecuteTrigger(req)
