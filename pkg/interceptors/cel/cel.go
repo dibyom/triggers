@@ -247,7 +247,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 	if err != nil {
 		return &triggersv1.InterceptorResponse{
 			Continue: false,
-			Status:   status.New(codes.Internal, fmt.Sprintf("error creating cel environment: %w", err)),
+			Status:   status.New(codes.Internal, fmt.Sprintf("error creating cel environment: %v", err)),
 		}
 	}
 
@@ -260,7 +260,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 	if err != nil {
 		return &triggersv1.InterceptorResponse{
 			Continue: false,
-			Status:   status.New(codes.Internal, fmt.Sprintf("error making the evaluation context: %w", err)),
+			Status:   status.New(codes.Internal, fmt.Sprintf("error making the evaluation context: %v", err)),
 		}
 	}
 
@@ -271,7 +271,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %w", err)),
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %v", err)),
 			}
 		}
 
@@ -290,7 +290,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %w", err)),
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %v", err)),
 			}
 		}
 
@@ -339,7 +339,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("failed to convert overlay result to type: %w", err)),
+				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("failed to convert overlay result to type: %v", err)),
 			}
 		}
 
