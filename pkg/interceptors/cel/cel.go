@@ -34,7 +34,6 @@ import (
 	"github.com/google/cel-go/common/types/ref"
 	"github.com/google/cel-go/common/types/traits"
 	celext "github.com/google/cel-go/ext"
-	"github.com/tektoncd/triggers/pkg/interceptors"
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -66,7 +65,7 @@ var (
 type params = triggersv1.CELInterceptor
 
 // NewInterceptor creates a prepopulated Interceptor.
-func NewInterceptor(cel *triggersv1.CELInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) interceptors.Interceptor {
+func NewInterceptor(cel *triggersv1.CELInterceptor, k kubernetes.Interface, ns string, l *zap.SugaredLogger) *Interceptor {
 	return &Interceptor{
 		Logger:                 l,
 		CEL:                    cel,
@@ -283,8 +282,9 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		}
 	}
 
-	extensions := map[string]interface{}{}
-
+	// Empty JSON body bytes.
+	// We use []byte instead of map[string]interface{} to allow ovewriting keys using sjson.
+	var extensions []byte
 	for _, u := range p.Overlays {
 		val, err := evaluate(u.Expression, env, evalContext)
 		if err != nil {
@@ -295,70 +295,85 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		}
 
 		var raw interface{}
-		//var b []byte
+		var b []byte
 
 		switch val.(type) {
 		case types.String:
 			raw, err = val.ConvertToNative(structType)
-			//if err == nil {
-			//	b, err = json.Marshal(raw.(*structpb.Value).GetStringValue())
-			//}
+			if err == nil {
+				b, err = json.Marshal(raw.(*structpb.Value).GetStringValue())
+			}
 		case types.Double, types.Int:
 			raw, err = val.ConvertToNative(structType)
-			//if err == nil {
-			//	b, err = json.Marshal(raw.(*structpb.Value).GetNumberValue())
-			//}
+			if err == nil {
+				b, err = json.Marshal(raw.(*structpb.Value).GetNumberValue())
+			}
 		case traits.Lister:
 			raw, err = val.ConvertToNative(listType)
-			//if err == nil {
-			//	s, err := protojson.Marshal(raw.(proto.Message))
-			//	if err == nil {
-			//		b = []byte(s)
-			//	}
-			//}
+			if err == nil {
+				s, err := protojson.Marshal(raw.(proto.Message))
+				if err == nil {
+					b = []byte(s)
+				}
+			}
 		case traits.Mapper:
 			raw, err = val.ConvertToNative(mapType)
-			//if err == nil {
-			//	s, err := protojson.Marshal(raw.(proto.Message))
-			//	if err == nil {
-			//		b = []byte(s)
-			//	}
-			//}
+			if err == nil {
+				s, err := protojson.Marshal(raw.(proto.Message))
+				if err == nil {
+					b = []byte(s)
+				}
+			}
 		case types.Bool:
 			raw, err = val.ConvertToNative(structType)
-			//if err == nil {
-			//	b, err = json.Marshal(raw.(*structpb.Value).GetBoolValue())
-			//}
+			if err == nil {
+				b, err = json.Marshal(raw.(*structpb.Value).GetBoolValue())
+			}
 		default:
 			raw, err = val.ConvertToNative(reflect.TypeOf([]byte{}))
-			//if err == nil {
-			//	b = raw.([]byte)
-			//}
+			if err == nil {
+				b = raw.([]byte)
+			}
 		}
 
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("failed to convert overlay result to type: %v", err)),
+				Status:   status.New(codes.Internal, fmt.Sprintf("failed to convert overlay result to type: %v", err)),
 			}
 		}
 
 		// TODO: For backwards compatibility, we could keep this and return the body back?
-		// payload, err = sjson.SetRawBytes(payload, u.Key, b)
+		if extensions == nil {
+			extensions = []byte("{}")
+		}
+		extensions, err = sjson.SetRawBytes(extensions, u.Key, b)
 
-		//if err != nil {
-		//	return nil, fmt.Errorf("failed to sjson for key '%s' to '%s': %w", u.Key, val, err)
-		//}
-		extensions[u.Key] = raw
+		if err != nil {
+			return &triggersv1.InterceptorResponse{
+				Continue: false,
+				Status:   status.New(codes.Internal, fmt.Sprintf("failed to sjson for key '%s' to '%s': %v", u.Key, val, err)),
+			}
+		}
 	}
 
-	//return &http.Response{
-	//	Header: request.Header,
-	//	Body:   ioutil.NopCloser(bytes.NewBuffer(payload)),
-	//}, nil
+	if extensions == nil {
+		return &triggersv1.InterceptorResponse{
+			Continue: true,
+		}
+	}
+
+	extensionsMap := map[string]interface{}{}
+	if err := json.Unmarshal(extensions, &extensionsMap); err != nil {
+		return &triggersv1.InterceptorResponse{
+			Continue: false,
+			Status:   status.New(codes.Internal, fmt.Sprintf("failed to unmarshall extensions into map: %v", err)),
+		}
+	}
 
 	return &triggersv1.InterceptorResponse{
 		Continue: true,
-		Extensions: extensions,
+		Extensions: extensionsMap,
 	}
 }
+
