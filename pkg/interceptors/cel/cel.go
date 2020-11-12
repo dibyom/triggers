@@ -259,18 +259,17 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 	if err != nil {
 		return &triggersv1.InterceptorResponse{
 			Continue: false,
-			Status:   status.New(codes.Internal, fmt.Sprintf("error making the evaluation context: %v", err)),
+			Status:   status.New(codes.InvalidArgument, fmt.Sprintf("error making the evaluation context: %v", err)),
 		}
 	}
 
 	if p.Filter != "" {
-		// TODO: Return error message from CEL that can be returned via as a status.Details
 		out, err := evaluate(p.Filter, env, evalContext)
 
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %v", err)),
+				Status:   status.New(codes.InvalidArgument, fmt.Sprintf("error evaluating cel expression: %v", err)),
 			}
 		}
 
@@ -290,7 +289,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 		if err != nil {
 			return &triggersv1.InterceptorResponse{
 				Continue: false,
-				Status:   status.New(codes.FailedPrecondition, fmt.Sprintf("error evaluating cel expression: %v", err)),
+				Status:   status.New(codes.InvalidArgument, fmt.Sprintf("error evaluating cel expression: %v", err)),
 			}
 		}
 

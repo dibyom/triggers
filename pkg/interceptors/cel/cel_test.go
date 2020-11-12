@@ -17,10 +17,9 @@ limitations under the License.
 package cel
 
 import (
-	"bytes"
+	"context"
 	"encoding/json"
-	"io"
-	"io/ioutil"
+	"google.golang.org/grpc/codes"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -246,7 +245,7 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 			},
 				Extensions:        nil,
 				InterceptorParams: map[string]interface{}{
-					"filters": tt.CEL.Filter,
+					"filter": tt.CEL.Filter,
 					"overlays": tt.CEL.Overlays,
 				},
 				Context:          &triggersv1.TriggerContext{
@@ -256,12 +255,12 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 				},
 			})
 			if !res.Continue {
-				rt.Fatalf("cel.Process() returned continue: false: %v", res)
+				rt.Fatalf("cel.Process() unexpectedly returned continue: false: %v", res)
 			}
 			if tt.wantExtensions != nil {
 				got := res.Extensions
 				if diff := cmp.Diff(tt.wantExtensions, got); diff != ""{
-					rt.Fatalf("cel.Process() did return correct extensions (-want+got): %v", diff)
+					rt.Fatalf("cel.Process() did return correct extensions (-wantMsg+got): %v", diff)
 				}
 			}
 		})
@@ -270,52 +269,52 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 
 func TestInterceptor_ExecuteTrigger_Errors(t *testing.T) {
 	tests := []struct {
-		name    string
-		CEL     *triggersv1.CELInterceptor
-		payload []byte
-		want    string
-	}{
-		{
+		name       string
+		CEL        *triggersv1.CELInterceptor
+		body       []byte
+		wantCode   codes.Code
+		wantMsg    string
+	}{{
 			name: "simple body check with non-matching body",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "body.value == 'test'",
 			},
-			payload: []byte(`{"value":"testing"}`),
-			want:    "expression body.value == 'test' did not return true",
-		},
-		{
+			body:     []byte(`{"value":"testing"}`),
+			wantCode: codes.FailedPrecondition,
+			wantMsg:  "expression body.value == 'test' did not return true",
+		}, {
 			name: "simple header check with non matching header",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "header['X-Test'][0] == 'unknown'",
 			},
-			payload: []byte(`{}`),
-			want:    "expression header.*'unknown' did not return true",
-		},
-		{
+			body:    []byte(`{}`),
+			wantCode: codes.FailedPrecondition,
+			wantMsg: "expression header.*'unknown' did not return true",
+		}, {
 			name: "overloaded header check with case insensitive failed match",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "header.match('x-test', 'no-match')",
 			},
-			payload: []byte(`{}`),
-			want:    "expression header.match\\('x-test', 'no-match'\\) did not return true",
-		},
-		{
+			body:    []byte(`{}`),
+			wantCode: codes.FailedPrecondition,
+			wantMsg: "expression header.match\\('x-test', 'no-match'\\) did not return true",
+		}, {
 			name: "unable to parse the expression",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "header['X-Test",
 			},
-			payload: []byte(`{"value":"test"}`),
-			want:    "Syntax error: token recognition error at: ''X-Test'",
-		},
-		{
+			body:    []byte(`{"value":"test"}`),
+			wantCode: codes.InvalidArgument,
+			wantMsg: "Syntax error: token recognition error at: ''X-Test'",
+		}, {
 			name: "unable to parse the JSON body",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "body.value == 'test'",
 			},
-			payload: []byte(`{]`),
-			want:    "invalid character ']' looking for beginning of object key string",
-		},
-		{
+			body:    []byte(`{]`),
+			wantCode: codes.InvalidArgument,
+			wantMsg: "invalid character ']' looking for beginning of object key string",
+		}, {
 			name: "bad overlay",
 			CEL: &triggersv1.CELInterceptor{
 				Filter: "body.value == 'test'",
@@ -323,32 +322,43 @@ func TestInterceptor_ExecuteTrigger_Errors(t *testing.T) {
 					{Key: "new", Expression: "test.value"},
 				},
 			},
-			payload: []byte(`{"value":"test"}`),
-			want:    `expression "test.value" check failed: ERROR:.*undeclared reference to 'test'`,
+			body:    []byte(`{"value":"test"}`),
+			wantCode: codes.InvalidArgument,
+			wantMsg: `expression "test.value" check failed: ERROR:.*undeclared reference to 'test'`,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			logger, _ := logging.NewLogger("", "")
 			w := &Interceptor{
-				CEL:    tt.CEL,
 				Logger: logger,
 			}
-			request := &http.Request{
-				URL:  mustParseURL(t, "https://example.com/testing"),
-				Body: ioutil.NopCloser(bytes.NewReader(tt.payload)),
-				GetBody: func() (io.ReadCloser, error) {
-					return ioutil.NopCloser(bytes.NewReader(tt.payload)), nil
+			res := w.Process(context.Background(), &triggersv1.InterceptorRequest{
+				Body:              tt.body,
+				Header:            http.Header{
+					"Content-Type":   []string{"application/json"},
+					"X-Test":         []string{"test-value"},
 				},
-				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-					"X-Test":       []string{"test-value"},
+				Extensions:        nil,
+				InterceptorParams: map[string]interface{}{
+					"filter": tt.CEL.Filter,
+					"overlays": tt.CEL.Overlays,
 				},
+				Context:          &triggersv1.TriggerContext{
+					EventURL:  "https://testing.example.com",
+					EventID:   "abcde",
+					TriggerID: "namespaces/default/triggers/example-trigger",
+				},
+			})
+			if res.Continue {
+				t.Fatalf("cel.Process() uexpectedly returned continue: true. Response: %+v", res)
 			}
-			_, err := w.ExecuteTrigger(request)
-			if !matchError(t, tt.want, err) {
-				t.Errorf("evaluate() got %s, wanted %s", err, tt.want)
-				return
+			if tt.wantCode != res.Status.Code() {
+				t.Errorf("cel.Process() unexpected status.Code. wanted: %v, got: %v. Status is: %+v", tt.wantCode, res.Status.Code(), res.Status.Err())
+			}
+			if !matchError(t, tt.wantMsg, res.Status.Err()) {
+				t.Fatalf("cel.Process() got %+v, wanted status.message to contain %s", res.Status.Err(), tt.wantMsg)
+
 			}
 		})
 	}
@@ -522,7 +532,7 @@ func TestExpressionEvaluation(t *testing.T) {
 				return
 			}
 			if !got.Equal(tt.want).(types.Bool) {
-				rt.Errorf("evaluate() = %s, want %s", got, tt.want)
+				rt.Errorf("evaluate() = %s, wantMsg %s", got, tt.want)
 			}
 		})
 	}
