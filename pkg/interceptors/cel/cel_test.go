@@ -19,6 +19,7 @@ package cel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"google.golang.org/grpc/codes"
 	"net/http"
 	"net/http/httptest"
@@ -40,7 +41,7 @@ import (
 
 const testNS = "testing-ns"
 
-func TestInterceptor_ExecuteTrigger(t *testing.T) {
+func TestInterceptor_Process(t *testing.T) {
 	tests := []struct {
 		name           string
 		CEL            *triggersv1.CELInterceptor
@@ -235,7 +236,7 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 			if _, err := kubeClient.CoreV1().Secrets(testNS).Create(ctx, makeSecret(), metav1.CreateOptions{}); err != nil {
 				rt.Error(err)
 			}
-			w := NewInterceptor(tt.CEL, kubeClient, "testing-ns", logger)
+			w := NewInterceptor(tt.CEL, kubeClient, testNS, logger)
 			res := w.Process(ctx, &triggersv1.InterceptorRequest{
 				Body:              tt.body,
 				Header:            http.Header{
@@ -251,11 +252,11 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 				Context:          &triggersv1.TriggerContext{
 					EventURL:  "https://testing.example.com",
 					EventID:   "abcde",
-					TriggerID: "namespaces/default/triggers/example-trigger",
+					TriggerID: fmt.Sprintf("namespaces/%s/triggers/example-trigger", testNS),
 				},
 			})
 			if !res.Continue {
-				rt.Fatalf("cel.Process() unexpectedly returned continue: false: %v", res)
+				rt.Fatalf("cel.Process() unexpectedly returned continue: false. Response is: %v", res.Status.Err())
 			}
 			if tt.wantExtensions != nil {
 				got := res.Extensions
@@ -267,7 +268,7 @@ func TestInterceptor_ExecuteTrigger(t *testing.T) {
 	}
 }
 
-func TestInterceptor_ExecuteTrigger_Errors(t *testing.T) {
+func TestInterceptor_Process_Error(t *testing.T) {
 	tests := []struct {
 		name       string
 		CEL        *triggersv1.CELInterceptor
@@ -704,21 +705,3 @@ func makeSecret() *corev1.Secret {
 	}
 }
 
-func mustParseURL(t *testing.T, u string) *url.URL {
-	t.Helper()
-	parsed, err := url.Parse(u)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return parsed
-}
-
-func mustUnmarshal(t *testing.T, b []byte) map[string]interface{} {
-	t.Helper()
-	v := map[string]interface{}{}
-	err := json.Unmarshal(b, &v)
-	if err != nil {
-		t.Fatalf("failed to unmarshal the body '%s': %s", b, err)
-	}
-	return v
-}
