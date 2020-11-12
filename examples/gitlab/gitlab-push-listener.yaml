@@ -15,11 +15,11 @@ spec:
               - Push Hook  # Only push events
         - cel:
             overlays:
-              - key: extensions.branch_name
+              - key: branch_name
                 expression: "body.ref.split('/')[2]"
       bindings:
         - name: gitrevision
-          value: $(body.checkout_sha)
+          value: $(extensions.branch_name)
         - name: gitrepositoryurl
           value: $(body.repository.git_http_url)
       template:
