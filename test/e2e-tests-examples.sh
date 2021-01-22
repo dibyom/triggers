@@ -19,7 +19,7 @@ PORT_FORWARD_PID=""
 trap "cleanup" EXIT SIGINT
 cleanup() {
   kill ${PORT_FORWARD_PID} || true
-  rm response.txt || true
+  rm ${folder}/response.txt || true
   for file in ${yaml_files}; do
     kubectl delete -f ${file} || true
   done
@@ -36,7 +36,9 @@ kubectl wait --for=condition=Available --timeout=10s eventlisteners/${folder_nam
 # Port forward to EL
 kubectl port-forward service/el-${folder_name} 8080:8080 &
 PORT_FORWARD_PID=$! # Store PID of port-forward to kill later
-sleep 2 # TODO: Is there a better way to do this?
+
+# Sleep so 1. Port forward starts up 2. Sink can actually fetch all resources when we make the call
+sleep 5 # TODO: Is there a better way to do this?
 
 # Make the curl call
 set +e
