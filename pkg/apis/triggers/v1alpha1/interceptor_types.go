@@ -24,6 +24,7 @@ type Interceptor struct {
 	Spec InterceptorSpec `json:"spec"`
 }
 
+// InterceptorSpec describes the Spec for an Interceptor
 type InterceptorSpec struct {
 	ClientConfig ClientConfig `json:"clientConfig"`
 }

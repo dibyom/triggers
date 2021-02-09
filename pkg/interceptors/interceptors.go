@@ -202,7 +202,7 @@ func ResolveToURL(getter InterceptorGetter, name string) (*apis.URL, error) {
 	if url == nil {
 		return nil, ErrNilURL
 	}
-	return ic.Spec.ClientConfig.URL, nil
+	return url, nil
 }
 
 func Execute(ctx context.Context, client *http.Client, req *triggersv1.InterceptorRequest, url string) (*triggersv1.InterceptorResponse, error) {

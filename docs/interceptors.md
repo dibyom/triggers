@@ -16,7 +16,7 @@ paramters the interceptor accepts).
 
 - [Interceptors](#interceptors)
   - [Syntax](#syntax)
-  -- [clientConfig](#clientConfig)
+    - [clientConfig](#clientConfig)
 
 ## Syntax
 
