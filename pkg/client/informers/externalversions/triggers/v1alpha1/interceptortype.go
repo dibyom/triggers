@@ -32,58 +32,58 @@ import (
 	cache "k8s.io/client-go/tools/cache"
 )
 
-// InterceptorInformer provides access to a shared informer and lister for
-// Interceptors.
-type InterceptorInformer interface {
+// InterceptorTypeInformer provides access to a shared informer and lister for
+// InterceptorTypes.
+type InterceptorTypeInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() v1alpha1.InterceptorLister
+	Lister() v1alpha1.InterceptorTypeLister
 }
 
-type interceptorInformer struct {
+type interceptorTypeInformer struct {
 	factory          internalinterfaces.SharedInformerFactory
 	tweakListOptions internalinterfaces.TweakListOptionsFunc
 }
 
-// NewInterceptorInformer constructs a new informer for Interceptor type.
+// NewInterceptorTypeInformer constructs a new informer for InterceptorType type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewInterceptorInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
-	return NewFilteredInterceptorInformer(client, resyncPeriod, indexers, nil)
+func NewInterceptorTypeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers) cache.SharedIndexInformer {
+	return NewFilteredInterceptorTypeInformer(client, resyncPeriod, indexers, nil)
 }
 
-// NewFilteredInterceptorInformer constructs a new informer for Interceptor type.
+// NewFilteredInterceptorTypeInformer constructs a new informer for InterceptorType type.
 // Always prefer using an informer factory to get a shared informer instead of getting an independent
 // one. This reduces memory footprint and number of connections to the server.
-func NewFilteredInterceptorInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
+func NewFilteredInterceptorTypeInformer(client versioned.Interface, resyncPeriod time.Duration, indexers cache.Indexers, tweakListOptions internalinterfaces.TweakListOptionsFunc) cache.SharedIndexInformer {
 	return cache.NewSharedIndexInformer(
 		&cache.ListWatch{
 			ListFunc: func(options v1.ListOptions) (runtime.Object, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.TriggersV1alpha1().Interceptors().List(context.TODO(), options)
+				return client.TriggersV1alpha1().InterceptorTypes().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.TriggersV1alpha1().Interceptors().Watch(context.TODO(), options)
+				return client.TriggersV1alpha1().InterceptorTypes().Watch(context.TODO(), options)
 			},
 		},
-		&triggersv1alpha1.Interceptor{},
+		&triggersv1alpha1.InterceptorType{},
 		resyncPeriod,
 		indexers,
 	)
 }
 
-func (f *interceptorInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
-	return NewFilteredInterceptorInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
+func (f *interceptorTypeInformer) defaultInformer(client versioned.Interface, resyncPeriod time.Duration) cache.SharedIndexInformer {
+	return NewFilteredInterceptorTypeInformer(client, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}, f.tweakListOptions)
 }
 
-func (f *interceptorInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&triggersv1alpha1.Interceptor{}, f.defaultInformer)
+func (f *interceptorTypeInformer) Informer() cache.SharedIndexInformer {
+	return f.factory.InformerFor(&triggersv1alpha1.InterceptorType{}, f.defaultInformer)
 }
 
-func (f *interceptorInformer) Lister() v1alpha1.InterceptorLister {
-	return v1alpha1.NewInterceptorLister(f.Informer().GetIndexer())
+func (f *interceptorTypeInformer) Lister() v1alpha1.InterceptorTypeLister {
+	return v1alpha1.NewInterceptorTypeLister(f.Informer().GetIndexer())
 }

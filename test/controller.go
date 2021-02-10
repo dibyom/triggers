@@ -32,7 +32,7 @@ import (
 	faketriggersclient "github.com/tektoncd/triggers/pkg/client/injection/client/fake"
 	fakeclustertriggerbindinginformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/clustertriggerbinding/fake"
 	fakeeventlistenerinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/eventlistener/fake"
-	fakeinterceptorinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/interceptor/fake"
+	fakeinterceptortypeinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/interceptortype/fake"
 	faketriggerinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/trigger/fake"
 	faketriggerbindinginformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/triggerbinding/fake"
 	faketriggertemplateinformer "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/triggertemplate/fake"
@@ -58,7 +58,7 @@ type Resources struct {
 	Namespaces             []*corev1.Namespace
 	ClusterTriggerBindings []*v1alpha1.ClusterTriggerBinding
 	EventListeners         []*v1alpha1.EventListener
-	Interceptors           []*v1alpha1.Interceptor
+	Interceptors           []*v1alpha1.InterceptorType
 	TriggerBindings        []*v1alpha1.TriggerBinding
 	TriggerTemplates       []*v1alpha1.TriggerTemplate
 	Triggers               []*v1alpha1.Trigger
@@ -104,7 +104,7 @@ func SeedResources(t *testing.T, ctx context.Context, r Resources) Clients {
 	// Setup fake informer for reconciler tests
 	ctbInformer := fakeclustertriggerbindinginformer.Get(ctx)
 	elInformer := fakeeventlistenerinformer.Get(ctx)
-	icInformer := fakeinterceptorinformer.Get(ctx)
+	icInformer := fakeinterceptortypeinformer.Get(ctx)
 	ttInformer := faketriggertemplateinformer.Get(ctx)
 	tbInformer := faketriggerbindinginformer.Get(ctx)
 	trInformer := faketriggerinformer.Get(ctx)
@@ -142,7 +142,7 @@ func SeedResources(t *testing.T, ctx context.Context, r Resources) Clients {
 		if err := icInformer.Informer().GetIndexer().Add(ic); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := c.Triggers.TriggersV1alpha1().Interceptors().Create(context.Background(), ic, metav1.CreateOptions{}); err != nil {
+		if _, err := c.Triggers.TriggersV1alpha1().InterceptorTypes().Create(context.Background(), ic, metav1.CreateOptions{}); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -22,7 +22,7 @@ type ClusterTriggerBindingExpansion interface{}
 
 type EventListenerExpansion interface{}
 
-type InterceptorExpansion interface{}
+type InterceptorTypeExpansion interface{}
 
 type TriggerExpansion interface{}
 

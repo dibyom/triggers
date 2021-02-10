@@ -82,7 +82,7 @@ var (
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "github",
 		},
-		Spec: triggersv1.InterceptorSpec{
+		Spec: triggersv1.InterceptorTypeSpec{
 			ClientConfig: triggersv1.ClientConfig{
 				URL: &apis.URL{
 					Scheme: "http",
@@ -96,7 +96,7 @@ var (
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "cel",
 		},
-		Spec: triggersv1.InterceptorSpec{
+		Spec: triggersv1.InterceptorTypeSpec{
 			ClientConfig: triggersv1.ClientConfig{
 				URL: &apis.URL{
 					Scheme: "http",
@@ -110,7 +110,7 @@ var (
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "bitbucket",
 		},
-		Spec: triggersv1.InterceptorSpec{
+		Spec: triggersv1.InterceptorTypeSpec{
 			ClientConfig: triggersv1.ClientConfig{
 				URL: &apis.URL{
 					Scheme: "http",

@@ -25,44 +25,44 @@ import (
 	"k8s.io/client-go/tools/cache"
 )
 
-// InterceptorLister helps list Interceptors.
+// InterceptorTypeLister helps list InterceptorTypes.
 // All objects returned here must be treated as read-only.
-type InterceptorLister interface {
-	// List lists all Interceptors in the indexer.
+type InterceptorTypeLister interface {
+	// List lists all InterceptorTypes in the indexer.
 	// Objects returned here must be treated as read-only.
-	List(selector labels.Selector) (ret []*v1alpha1.Interceptor, err error)
-	// Get retrieves the Interceptor from the index for a given name.
+	List(selector labels.Selector) (ret []*v1alpha1.InterceptorType, err error)
+	// Get retrieves the InterceptorType from the index for a given name.
 	// Objects returned here must be treated as read-only.
-	Get(name string) (*v1alpha1.Interceptor, error)
-	InterceptorListerExpansion
+	Get(name string) (*v1alpha1.InterceptorType, error)
+	InterceptorTypeListerExpansion
 }
 
-// interceptorLister implements the InterceptorLister interface.
-type interceptorLister struct {
+// interceptorTypeLister implements the InterceptorTypeLister interface.
+type interceptorTypeLister struct {
 	indexer cache.Indexer
 }
 
-// NewInterceptorLister returns a new InterceptorLister.
-func NewInterceptorLister(indexer cache.Indexer) InterceptorLister {
-	return &interceptorLister{indexer: indexer}
+// NewInterceptorTypeLister returns a new InterceptorTypeLister.
+func NewInterceptorTypeLister(indexer cache.Indexer) InterceptorTypeLister {
+	return &interceptorTypeLister{indexer: indexer}
 }
 
-// List lists all Interceptors in the indexer.
-func (s *interceptorLister) List(selector labels.Selector) (ret []*v1alpha1.Interceptor, err error) {
+// List lists all InterceptorTypes in the indexer.
+func (s *interceptorTypeLister) List(selector labels.Selector) (ret []*v1alpha1.InterceptorType, err error) {
 	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*v1alpha1.Interceptor))
+		ret = append(ret, m.(*v1alpha1.InterceptorType))
 	})
 	return ret, err
 }
 
-// Get retrieves the Interceptor from the index for a given name.
-func (s *interceptorLister) Get(name string) (*v1alpha1.Interceptor, error) {
+// Get retrieves the InterceptorType from the index for a given name.
+func (s *interceptorTypeLister) Get(name string) (*v1alpha1.InterceptorType, error) {
 	obj, exists, err := s.indexer.GetByKey(name)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
-		return nil, errors.NewNotFound(v1alpha1.Resource("interceptor"), name)
+		return nil, errors.NewNotFound(v1alpha1.Resource("interceptortype"), name)
 	}
-	return obj.(*v1alpha1.Interceptor), nil
+	return obj.(*v1alpha1.InterceptorType), nil
 }

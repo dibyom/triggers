@@ -188,7 +188,7 @@ func GetName(i *triggersv1.TriggerInterceptor) string {
 	return name
 }
 
-type InterceptorGetter func(name string) (*triggersv1.Interceptor, error)
+type InterceptorGetter func(name string) (*triggersv1.InterceptorType, error)
 
 var ErrNilURL = errors.New("interceptor URL was nil")
 
@@ -198,11 +198,17 @@ func ResolveToURL(getter InterceptorGetter, name string) (*apis.URL, error) {
 	if err != nil {
 		return nil, err
 	}
-	url := ic.Spec.ClientConfig.URL
-	if url == nil {
-		return nil, ErrNilURL
+	if url := ic.Spec.ClientConfig.URL; url != nil {
+		return url, nil
 	}
-	return url, nil
+
+	// TODO: This resolution should be done for the Interceptor type and we should read the URL off of the Status
+	if svc := ic.Spec.ClientConfig.Service; svc != nil {
+		// If namespace is "", assume it is system.GetNamespace()
+		// TODO: Also assuming port 80 and http here. Use DNS/or the env vars?
+			apis.ParseURL(fmt.Sprintf("http://%s.%s.svc", svc.Name, svc.Namespace))
+	}
+	return  nil, ErrNilURL
 }
 
 func Execute(ctx context.Context, client *http.Client, req *triggersv1.InterceptorRequest, url string) (*triggersv1.InterceptorResponse, error) {

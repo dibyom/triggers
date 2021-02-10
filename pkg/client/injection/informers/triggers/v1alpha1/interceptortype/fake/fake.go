@@ -22,12 +22,12 @@ import (
 	context "context"
 
 	fake "github.com/tektoncd/triggers/pkg/client/injection/informers/factory/fake"
-	interceptor "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/interceptor"
+	interceptortype "github.com/tektoncd/triggers/pkg/client/injection/informers/triggers/v1alpha1/interceptortype"
 	controller "knative.dev/pkg/controller"
 	injection "knative.dev/pkg/injection"
 )
 
-var Get = interceptor.Get
+var Get = interceptortype.Get
 
 func init() {
 	injection.Fake.RegisterInformer(withInformer)
@@ -35,6 +35,6 @@ func init() {
 
 func withInformer(ctx context.Context) (context.Context, controller.Informer) {
 	f := fake.Get(ctx)
-	inf := f.Triggers().V1alpha1().Interceptors()
-	return context.WithValue(ctx, interceptor.Key{}, inf), inf.Informer()
+	inf := f.Triggers().V1alpha1().InterceptorTypes()
+	return context.WithValue(ctx, interceptortype.Key{}, inf), inf.Informer()
 }

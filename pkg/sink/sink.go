@@ -61,7 +61,7 @@ type Sink struct {
 	TriggerBindingLister        listers.TriggerBindingLister
 	ClusterTriggerBindingLister listers.ClusterTriggerBindingLister
 	TriggerTemplateLister       listers.TriggerTemplateLister
-	InterceptorLister           listers.InterceptorLister
+	InterceptorTypeLister       listers.InterceptorTypeLister
 }
 
 // Response defines the HTTP body that the Sink responds to events with.
@@ -294,7 +294,7 @@ func (r Sink) ExecuteInterceptors(t triggersv1.Trigger, in *http.Request, event 
 			continue
 		}
 		request.InterceptorParams = interceptors.GetInterceptorParams(i)
-		url, err := interceptors.ResolveToURL(r.InterceptorLister.Get, interceptors.GetName(i))
+		url, err := interceptors.ResolveToURL(r.InterceptorTypeLister.Get, interceptors.GetName(i))
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not resolve interceptor URL: %w", err)
 		}

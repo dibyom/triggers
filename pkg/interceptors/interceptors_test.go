@@ -341,7 +341,7 @@ func TestResolveToURL(t *testing.T) {
 	t.Run("resolves URL", func(t *testing.T) {
 		fakeGetter := func(n string) (*triggersv1.Interceptor, error) {
 			return &triggersv1.Interceptor{
-				Spec: triggersv1.InterceptorSpec{
+				Spec: triggersv1.InterceptorTypeSpec{
 					ClientConfig: triggersv1.ClientConfig{
 						URL: &apis.URL{
 							Scheme: "http",
@@ -366,7 +366,7 @@ func TestResolveToURL(t *testing.T) {
 	t.Run("interceptor has no URL", func(t *testing.T) {
 		fakeGetter := func(name string) (*triggersv1.Interceptor, error) {
 			return &triggersv1.Interceptor{
-				Spec: triggersv1.InterceptorSpec{
+				Spec: triggersv1.InterceptorTypeSpec{
 					ClientConfig: triggersv1.ClientConfig{
 						URL: nil,
 					},
