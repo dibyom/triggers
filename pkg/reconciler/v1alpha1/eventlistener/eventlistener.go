@@ -33,7 +33,6 @@ import (
 	eventlistenerreconciler "github.com/tektoncd/triggers/pkg/client/injection/reconciler/triggers/v1alpha1/eventlistener"
 	listers "github.com/tektoncd/triggers/pkg/client/listers/triggers/v1alpha1"
 	dynamicduck "github.com/tektoncd/triggers/pkg/dynamic"
-	"github.com/tektoncd/triggers/pkg/system"
 	"go.uber.org/zap"
 	"golang.org/x/xerrors"
 	appsv1 "k8s.io/api/apps/v1"
@@ -660,12 +659,7 @@ func getContainer(el *v1alpha1.EventListener, c Config, pod *duckv1.WithPod) cor
 		Name:      "config-logging",
 		MountPath: "/etc/config-logging",
 	}}
-
-	env := []corev1.EnvVar{{
-		Name:  "TEKTON_INSTALL_NAMESPACE",
-		Value: system.GetNamespace(),
-	}}
-
+	env := []corev1.EnvVar{}
 	if el.Spec.Resources.KubernetesResource != nil {
 		if len(el.Spec.Resources.KubernetesResource.Template.Spec.Containers) != 0 {
 			resources = el.Spec.Resources.KubernetesResource.Template.Spec.Containers[0].Resources
