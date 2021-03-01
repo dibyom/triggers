@@ -1,0 +1,87 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: gh-listener
+spec:
+  serviceAccountName: tekton-triggers-example-sa
+  serviceType: LoadBalancer
+  triggers:
+    - triggerRef: "github-push"
+    - triggerRef: "github-pr"
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: Trigger
+metadata:
+  name: github-push
+spec:
+  interceptors:
+    - github:
+        secretRef:
+          secretName: github-secret
+          secretKey: secretToken
+        eventTypes:
+          - push
+    - cel:
+        filter: "body.ref == 'refs/heads/master'"
+  bindings:
+    - name: "COMMIT_SHA"
+      value: "$(body.head_commit.id)" # SHA after push
+    - name: "REPO_NAME"
+      value: "$(body.repository.full_name)"
+  template:
+    ref: "git-clone-template"
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: Trigger
+metadata:
+  name: github-pr
+spec:
+  interceptors:
+    - github:
+        secretRef:
+          secretName: github-secret
+          secretKey: secretToken
+        eventTypes:
+          - pull_request
+    - cel:
+        filter: "body.action in ['opened', 'synchronize', 'reopened']"
+  bindings:
+    - name: "COMMIT_SHA"
+      value: "$(body.pull_request.head.sha)"
+    - name: "REPO_NAME"
+      value: "$(body.repository.full_name)"
+  template:
+    ref: "git-clone-template"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-secret
+type: Opaque
+stringData:
+  secretToken: "1234567"
+---
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: git-clone-template
+spec:
+  params:
+    - name: COMMIT_SHA
+    - name: REPO_NAME
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1beta1
+    kind: TaskRun
+    metadata:
+      generateName: github-run-
+    spec: # Make this take params
+      taskSpec: # TODO: Make this a ref to a pipeline that uses a catalog task
+        steps:
+        - image: alpine/git:latest
+          script: |
+            #! /bin/sh
+            mkdir workspace
+            git clone https://github.com/$(tt.params.REPO_NAME).git workspace
+            cd workspace
+            git checkout $(tt.params.COMMIT_SHA)
+            ls -l .
