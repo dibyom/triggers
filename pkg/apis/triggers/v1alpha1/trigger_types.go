@@ -82,11 +82,45 @@ type Trigger struct {
 
 // TriggerInterceptor provides a hook to intercept and pre-process events
 type TriggerInterceptor struct {
+	// Optional name to identify the current interceptor configuration
+	Name *string	`json:"name,omitempty"`
+	// Ref refers to the Interceptor to use
+	Ref InterceptorRef `json:"ref"`
+	// Params are the params to send to the interceptor
+	Params map[string]interface{} `json:"params,omitempty"`
+
+	// Deprecated old fields below
+	// TODO: Rename fields with Deprecated prefix
 	Webhook   *WebhookInterceptor   `json:"webhook,omitempty"`
 	GitHub    *GitHubInterceptor    `json:"github,omitempty"`
 	GitLab    *GitLabInterceptor    `json:"gitlab,omitempty"`
 	CEL       *CELInterceptor       `json:"cel,omitempty"`
 	Bitbucket *BitbucketInterceptor `json:"bitbucket,omitempty"`
+}
+
+type InterceptorRef struct {
+	// Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names
+	Name string `json:"name,omitempty"`
+	// TaskKind indicates the kind of the Intercepor, namespaced or cluster scoped.
+	// Currently only InterceptorKind is ClusterInterceptor, so the only valid value
+	// is the default one
+	Kind InterceptorKind `json:"kind,omitempty"`
+	// API version of the referent
+	// +optional
+	APIVersion string `json:"apiVersion,omitempty"`
+}
+
+// InterceptorKind defines the type of Interceptor used by the Trigger.
+type InterceptorKind string
+const (
+	// ClusterTaskKind indicates that task type has a cluster scope.
+	ClusterInterceptorKind InterceptorKind = "ClusterInterceptor"
+)
+
+func (ti *TriggerInterceptor) defaultInterceptorKind() {
+	if ti.Ref.Kind == "" {
+		ti.Ref.Kind = ClusterInterceptorKind
+	}
 }
 
 // WebhookInterceptor provides a webhook to intercept and pre-process events
