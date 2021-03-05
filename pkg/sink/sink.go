@@ -22,9 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	triggersclientset "github.com/tektoncd/triggers/pkg/client/clientset/versioned"
 	listers "github.com/tektoncd/triggers/pkg/client/listers/triggers/v1alpha1"
@@ -34,12 +31,14 @@ import (
 	"github.com/tektoncd/triggers/pkg/template"
 	"github.com/tidwall/sjson"
 	"go.uber.org/zap"
+	"io/ioutil"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	discoveryclient "k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"net/http"
 )
 
 // Sink defines the sink resource for processing incoming events for the
@@ -295,7 +294,7 @@ func (r Sink) ExecuteInterceptors(t triggersv1.Trigger, in *http.Request, event 
 			request.Body = string(payload)
 			continue
 		}
-		request.InterceptorParams = interceptors.GetInterceptorParams(i)
+		request.InterceptorParams  = interceptors.GetInterceptorParams(i)
 		url, err := interceptors.ResolveToURL(r.ClusterInterceptorLister.Get, interceptors.GetName(i))
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("could not resolve interceptor URL: %w", err)

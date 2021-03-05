@@ -591,7 +591,7 @@ accept to the `eventTypes` field. Valid values can be found in Bitbucket
 The body/header of the incoming request will be preserved in this Interceptor's
 response.
 
-<!-- FILE: examples/bitbucket/bitbucket-eventlistener-interceptor.yaml -->
+<!-- FILE: examples/bitbucket/bitbucket-listener.yaml -->
 ```YAML
 ---
 apiVersion: triggers.tekton.dev/v1alpha1

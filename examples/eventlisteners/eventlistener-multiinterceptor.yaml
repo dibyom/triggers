@@ -9,11 +9,15 @@ spec:
     - name: foo-trig
       interceptors:
         - github:
-            secretRef:
-              secretName: foo
-              secretKey: bar
-            eventTypes:
-              - pull_request
+            ref:
+              name: "github"
+            params:
+              - name: "secretRef"
+                value:
+                  secretName: foo
+                  secretKey: bar
+              - name: "eventTypes"
+                value: ["pull_request"]
         - webhook:
             header:
               - name: Foo-Trig-Header1
