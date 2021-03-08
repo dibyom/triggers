@@ -118,7 +118,6 @@ func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]interface{}
 		if i.CEL.Overlays != nil {
 			ip["overlays"] = i.CEL.Overlays
 		}
-
 	case i.Bitbucket != nil:
 		if i.Bitbucket.EventTypes != nil {
 			ip["eventTypes"] = i.Bitbucket.EventTypes
@@ -126,8 +125,9 @@ func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]interface{}
 		if i.Bitbucket.SecretRef != nil {
 			ip["secretRef"] = i.Bitbucket.SecretRef
 		}
+	case i.Params != nil:
+		ip = i.Params
 	}
-
 	return ip
 }
 
@@ -175,6 +175,8 @@ func GetName(i *triggersv1.TriggerInterceptor) string {
 	// This is temporary until we implement #868
 	name := ""
 	switch {
+	case i.Ref.Name != "":
+		name = i.Ref.Name
 	case i.Bitbucket != nil:
 		name = "bitbucket"
 	case i.CEL != nil:

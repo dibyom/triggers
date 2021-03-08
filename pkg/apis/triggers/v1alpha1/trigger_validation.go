@@ -91,7 +91,9 @@ func (t triggerSpecBindingArray) validate(ctx context.Context) (errs *apis.Field
 
 func (i *TriggerInterceptor) validate(ctx context.Context) (errs *apis.FieldError) {
 	if i.Webhook == nil && i.GitHub == nil && i.GitLab == nil && i.CEL == nil && i.Bitbucket == nil {
-		errs = errs.Also(apis.ErrMissingField("interceptor"))
+		if i.Ref.Name == "" {
+			errs = errs.Also(apis.ErrMissingField("interceptor"))
+		}
 	}
 
 	// Enforce oneof
