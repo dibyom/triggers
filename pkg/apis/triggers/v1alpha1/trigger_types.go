@@ -19,7 +19,6 @@ package v1alpha1
 import (
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -100,8 +99,8 @@ type TriggerInterceptor struct {
 }
 
 type InterceptorParams struct {
-	Name  string                    `json:"name"`
-	Value apiextensionsv1beta1.JSON `json:"value"`
+	Name  string                `json:"name"`
+	Value v1beta1.ArrayOrString `json:"value"`
 }
 
 type InterceptorRef struct {
@@ -142,6 +141,14 @@ type WebhookInterceptor struct {
 	Header []v1beta1.Param `json:"header,omitempty"`
 }
 
+// SecretRef contains the information required to reference a single secret string
+// This is needed because the other secretRef types are not cross-namespace and do not
+// actually contain the "SecretName" field, which allows us to access a single secret value.
+type SecretRef struct {
+	SecretKey  string `json:"secretKey,omitempty"`
+	SecretName string `json:"secretName,omitempty"`
+}
+
 // BitbucketInterceptor provides a webhook to intercept and pre-process events
 type BitbucketInterceptor struct {
 	SecretRef  *SecretRef `json:"secretRef,omitempty"`
@@ -156,7 +163,8 @@ type GitHubInterceptor struct {
 
 // GitLabInterceptor provides a webhook to intercept and pre-process events
 type GitLabInterceptor struct {
-	SecretRef  *SecretRef `json:"secretRef,omitempty"`
+	DeprecatedSecretRef  *SecretRef `json:"secretRef,omitempty"`
+	*SecretRef `json:",inline"`
 	EventTypes []string   `json:"eventTypes,omitempty"`
 }
 

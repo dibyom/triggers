@@ -23,11 +23,8 @@ import (
 
 	"google.golang.org/grpc/codes"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"github.com/tektoncd/triggers/pkg/interceptors"
-
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
-
 	"go.uber.org/zap"
 	"k8s.io/client-go/kubernetes"
 )
@@ -53,7 +50,7 @@ func (w *Interceptor) Process(ctx context.Context, r *triggersv1.InterceptorRequ
 	}
 
 	headers := interceptors.Canonical(r.Header)
-	if p.SecretRef != nil {
+	if p.DeprecatedSecretRef != nil || p.SecretRef != nil {
 		header := headers.Get("X-GitLab-Token")
 		if header == "" {
 			return interceptors.Fail(codes.InvalidArgument, "no X-GitLab-Token header set")

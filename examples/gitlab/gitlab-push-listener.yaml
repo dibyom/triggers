@@ -12,10 +12,10 @@ spec:
             name: "gitlab"
             kind: ClusterInterceptor
           params:
-            - name: secretRef
-              value:
-                secretName: "gitlab-secret"
-                secretKey: "secretToken"
+            - name: secretName
+              value: "gitlab-secret"
+            - name: secretKey
+              value: "secretToken"
             - name: eventTypes
               value:
                 - "Push Hook"

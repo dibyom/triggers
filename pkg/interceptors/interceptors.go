@@ -27,7 +27,6 @@ import (
 
 	"google.golang.org/grpc/codes"
 	"knative.dev/pkg/apis"
-
 	triggersv1 "github.com/tektoncd/triggers/pkg/apis/triggers/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
