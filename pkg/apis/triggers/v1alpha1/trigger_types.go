@@ -19,6 +19,7 @@ package v1alpha1
 import (
 	"github.com/tektoncd/pipeline/pkg/apis/pipeline/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -83,11 +84,11 @@ type Trigger struct {
 // TriggerInterceptor provides a hook to intercept and pre-process events
 type TriggerInterceptor struct {
 	// Optional name to identify the current interceptor configuration
-	Name *string	`json:"name,omitempty"`
+	Name *string `json:"name,omitempty"`
 	// Ref refers to the Interceptor to use
 	Ref InterceptorRef `json:"ref"`
 	// Params are the params to send to the interceptor
-	Params map[string]interface{} `json:"params,omitempty"`
+	Params []InterceptorParams `json:"params,omitempty"`
 
 	// Deprecated old fields below
 	// TODO: Rename fields with Deprecated prefix
@@ -98,10 +99,15 @@ type TriggerInterceptor struct {
 	Bitbucket *BitbucketInterceptor `json:"bitbucket,omitempty"`
 }
 
+type InterceptorParams struct {
+	Name  string                    `json:"name"`
+	Value apiextensionsv1beta1.JSON `json:"value"`
+}
+
 type InterceptorRef struct {
 	// Name of the referent; More info: http://kubernetes.io/docs/user-guide/identifiers#names
 	Name string `json:"name,omitempty"`
-	// TaskKind indicates the kind of the Intercepor, namespaced or cluster scoped.
+	// TaskKind indicates the kind of the Interceptor, namespaced or cluster scoped.
 	// Currently only InterceptorKind is ClusterInterceptor, so the only valid value
 	// is the default one
 	Kind InterceptorKind `json:"kind,omitempty"`
@@ -112,6 +118,7 @@ type InterceptorRef struct {
 
 // InterceptorKind defines the type of Interceptor used by the Trigger.
 type InterceptorKind string
+
 const (
 	// ClusterTaskKind indicates that task type has a cluster scope.
 	ClusterInterceptorKind InterceptorKind = "ClusterInterceptor"

@@ -126,7 +126,9 @@ func GetInterceptorParams(i *triggersv1.EventInterceptor) map[string]interface{}
 			ip["secretRef"] = i.Bitbucket.SecretRef
 		}
 	case i.Params != nil:
-		ip = i.Params
+		for _,p := range i.Params {
+			ip[p.Name] = p.Value
+		}
 	}
 	return ip
 }

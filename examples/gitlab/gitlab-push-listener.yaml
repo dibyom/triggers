@@ -12,10 +12,13 @@ spec:
             name: "gitlab"
             kind: ClusterInterceptor
           params:
-            secretRef:
-              secretName: "gitlab-secret"
-              secretKey: "secretToken"
-            eventTypes: ["Push Hook"]
+            - name: secretRef
+              value:
+                secretName: "gitlab-secret"
+                secretKey: "secretToken"
+            - name: eventTypes
+              value:
+                - "Push Hook"
       bindings:
         - name: gitrevision
           value: $(body.checkout_sha)
