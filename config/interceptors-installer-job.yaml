@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tekton-triggers-interceptors-installer
+  namespace: tekton-pipelines
+spec:
+  backoffLimit: 5
+  activeDeadlineSeconds: 100
+  ttlSecondsAfterFinished: 10
+  template:
+    spec:
+      serviceAccountName: "tekton-triggers-interceptors-installer"
+      containers:
+        - name: "wait-for-crd"
+          image: lachlanevenson/k8s-kubectl
+          command: ["kubectl"]
+          args:
+            - "--v=3"
+            - "wait"
+            - "--for=condition=Established"
+            - "--timeout=30s"
+            - "crds/clusterinterceptors.triggers.tekton.dev"
+        - name: "install-core-interceptors"
+          image: lachlanevenson/k8s-kubectl
+          command: ["kubectl"]
+          args:
+            - "--v=3"
+            - "apply"
+            - "-f"
+            - "https://storage.googleapis.com/tekton-releases/triggers/previous/${RELEASE_VERSION}/interceptors.yaml"
+      restartPolicy: Never
